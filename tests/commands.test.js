@@ -211,6 +211,24 @@ test("iteration safety cap remains task-wide across conversation rollover", () =
   assert.equal(rolloverAtCap.code, "command.workflow.cap_reached");
 });
 
+test("watchdog recovery prompt continues partial work without replaying the interrupted user prompt", () => {
+  const workflow = Commands.normalizeWorkflow({
+    kind: "goal",
+    objective: "finish the audit",
+    status: "running",
+    maxIterations: 12,
+    iteration: 4,
+    totalIterations: 7,
+    autoRolloverEnabled: true
+  }, 1000);
+  const prompt = Commands.workflowRecoveryPrompt(workflow);
+  assert.match(prompt, /previous assistant generation was stopped/i);
+  assert.match(prompt, /Continue from whatever partial work is already visible/i);
+  assert.match(prompt, /Do not repeat completed work/i);
+  assert.match(prompt, /task iteration 8 of at most 12/i);
+  assert.match(prompt, /\[YOLO:ROLLOVER\]/);
+});
+
 test("awaiting workflows retain and clear response stability candidates safely", () => {
   const waiting = Commands.normalizeWorkflow({
     kind: "loop",

@@ -19,6 +19,7 @@
   const MARKER_RESPONSE_STABLE_MS = 15_000;
   const MISSING_MARKER_RESPONSE_STABLE_MS = 3 * 60 * 60 * 1_000;
   const REFRESH_QUIET_MS = 60_000;
+  const WATCHDOG_RECOVERY_SETTLE_MS = 15_000;
 
   const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
@@ -148,6 +149,53 @@
     return Boolean(enabled && workflowStatus === "running");
   }
 
+  function generationWatchdogDecision({
+    enabled = false,
+    generating = false,
+    startedAt = 0,
+    lastProgressAt = 0,
+    stopRequestedAt = 0,
+    stoppedAt = 0,
+    now = Date.now(),
+    softStallMs = 5 * 60 * 1000,
+    hardStallMs = 10 * 60 * 1000,
+    absoluteLimitMs = 30 * 60 * 1000,
+    stopGraceMs = 30 * 1000,
+    recoverySettleMs = WATCHDOG_RECOVERY_SETTLE_MS
+  } = {}) {
+    if (!enabled) return { action: "none", reason: "Generation watchdog is disabled" };
+    const timestamp = finite(now, Date.now());
+    const started = Math.max(0, finite(startedAt, 0));
+    const progress = Math.max(started, finite(lastProgressAt, started));
+    const stopAt = Math.max(0, finite(stopRequestedAt, 0));
+    const stopped = Math.max(0, finite(stoppedAt, 0));
+
+    if (stopAt > 0) {
+      if (!generating && stopped > 0) {
+        const settleRemaining = Math.max(0, stopped + Math.max(0, finite(recoverySettleMs, WATCHDOG_RECOVERY_SETTLE_MS)) - timestamp);
+        if (settleRemaining > 0) return { action: "wait-recovery", reason: "Waiting for interrupted response to settle", retryAfterMs: settleRemaining };
+        return { action: "resume", reason: "Interrupted generation stopped; resume from partial response" };
+      }
+      if (generating) {
+        const graceRemaining = Math.max(0, stopAt + Math.max(0, finite(stopGraceMs, 30_000)) - timestamp);
+        if (graceRemaining > 0) return { action: "wait-stop", reason: "Waiting for Stop generating to take effect", retryAfterMs: graceRemaining };
+        return { action: "refresh", reason: "Generation remained active after Stop request" };
+      }
+    }
+
+    if (!generating || started <= 0) return { action: "none", reason: "No active generation" };
+    if (timestamp - started >= Math.max(0, finite(absoluteLimitMs, 30 * 60 * 1000))) {
+      return { action: "stop", reason: "Generation exceeded the absolute watchdog limit", absolute: true };
+    }
+    if (timestamp - progress >= Math.max(0, finite(hardStallMs, 10 * 60 * 1000))) {
+      return { action: "stop", reason: "Generation made no observable progress before the hard stall limit", absolute: false };
+    }
+    if (timestamp - progress >= Math.max(0, finite(softStallMs, 5 * 60 * 1000))) {
+      return { action: "warn", reason: "Generation has made no observable progress" };
+    }
+    return { action: "none", reason: "Generation is within watchdog limits" };
+  }
+
   return Object.freeze({
     VISIBLE_WORKFLOW_POLL_MS,
     HIDDEN_ACTIVE_WORKFLOW_POLL_MS,
@@ -158,6 +206,7 @@
     MARKER_RESPONSE_STABLE_MS,
     MISSING_MARKER_RESPONSE_STABLE_MS,
     REFRESH_QUIET_MS,
+    WATCHDOG_RECOVERY_SETTLE_MS,
     scanDelay,
     routeDelay,
     mutationDelay,
@@ -167,6 +216,7 @@
     inputSafety,
     nextGenerationHoldUntil,
     canAutomaticRefresh,
-    shouldProtectTab
+    shouldProtectTab,
+    generationWatchdogDecision
   });
 });

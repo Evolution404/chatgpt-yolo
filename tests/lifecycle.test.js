@@ -127,3 +127,33 @@ test("post-generation hold starts on the active-to-idle transition only", () => 
     25_000
   );
 });
+
+test("generation watchdog distinguishes progress, soft stall, hard stall, stop grace, and recovery", () => {
+  const base = {
+    enabled: true,
+    generating: true,
+    startedAt: 1_000,
+    lastProgressAt: 9_000,
+    now: 10_000,
+    softStallMs: 5_000,
+    hardStallMs: 10_000,
+    absoluteLimitMs: 30_000,
+    stopGraceMs: 3_000,
+    recoverySettleMs: 2_000
+  };
+  assert.equal(Lifecycle.generationWatchdogDecision(base).action, "none");
+  assert.equal(Lifecycle.generationWatchdogDecision({ ...base, lastProgressAt: 4_000 }).action, "warn");
+  assert.equal(Lifecycle.generationWatchdogDecision({ ...base, lastProgressAt: 0, now: 12_000 }).action, "stop");
+  assert.equal(Lifecycle.generationWatchdogDecision({ ...base, startedAt: 1_000, lastProgressAt: 11_000, now: 31_000 }).action, "stop");
+
+  const stopping = { ...base, stopRequestedAt: 10_000, now: 12_000 };
+  assert.equal(Lifecycle.generationWatchdogDecision(stopping).action, "wait-stop");
+  assert.equal(Lifecycle.generationWatchdogDecision({ ...stopping, now: 14_000 }).action, "refresh");
+  assert.equal(Lifecycle.generationWatchdogDecision({ ...stopping, generating: false, stoppedAt: 13_000, now: 14_000 }).action, "wait-recovery");
+  assert.equal(Lifecycle.generationWatchdogDecision({ ...stopping, generating: false, stoppedAt: 13_000, now: 16_000 }).action, "resume");
+});
+
+test("generation watchdog is inert when disabled or idle", () => {
+  assert.equal(Lifecycle.generationWatchdogDecision({ enabled: false, generating: true, startedAt: 1, lastProgressAt: 1, now: 999999 }).action, "none");
+  assert.equal(Lifecycle.generationWatchdogDecision({ enabled: true, generating: false, startedAt: 1, lastProgressAt: 1, now: 999999 }).action, "none");
+});

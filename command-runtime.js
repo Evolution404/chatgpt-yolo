@@ -360,6 +360,14 @@
     const apiState = engine()?.getState?.() || {};
     const queue = await queueState();
     const workflow = Commands.normalizeWorkflow(state.workflow);
+    const watchdog = apiState.runtime?.generationWatchdog || {};
+    const watchdogStatus = !apiState.settings?.generationWatchdogEnabled && !watchdog.stopRequestedAt
+      ? "Off"
+      : watchdog.stopRequestedAt
+        ? (watchdog.stoppedAt ? "Recovering interrupted response" : "Stop requested")
+        : apiState.generating
+          ? "Watching active generation"
+          : "Armed";
     state.ui?.showStatus({
       Conversation: state.pageId || "Unavailable",
       Workflow: workflow.status === "idle" ? "None" : `/${workflow.kind} · ${workflow.status}`,
@@ -371,6 +379,7 @@
       Queue: queue?.ok ? `${queue.state.items.length} item${queue.state.items.length === 1 ? "" : "s"}${queue.state.paused ? " · paused" : ""}` : "Unavailable",
       Runner: workflow.status === "running" ? (workflow.runnerId === state.ownerId ? "This tab" : (workflow.runnerId ? "Another tab" : "Acquiring")) : "—",
       Generation: apiState.generating ? "Active" : "Idle",
+      "Generation watchdog": watchdogStatus,
       Profile: apiState.settings?.profile || "Unknown",
       "Session actions": apiState.runtime?.sessionActionCount ?? 0,
       "Last action": apiState.lastAction?.message || "Idle"
@@ -904,6 +913,39 @@
     };
   }
 
+  async function recoverStalledGeneration(reason = "stuck generation watchdog") {
+    await syncRoute();
+    let workflow = await readWorkflow(state.pageId);
+    state.workflow = workflow;
+    syncUI();
+
+    if (workflow.status === "idle" || workflow.status === "completed") {
+      return { ok: true, handled: false, reason: "No active workflow needs watchdog recovery" };
+    }
+    if (workflow.status !== "running") {
+      return { ok: false, handled: false, reason: `Workflow is ${workflow.status}`, code: "watchdog.workflow_not_running" };
+    }
+    if (workflow.pendingItemId || !workflow.awaitingResponse) {
+      return { ok: true, handled: false, alreadyRecovered: true, reason: "Workflow already left the interrupted response state" };
+    }
+    if (engine()?.getState?.().generating) {
+      return { ok: false, handled: false, reason: "ChatGPT is still generating", code: "watchdog.generation_active" };
+    }
+    if (!await claimWorkflow()) {
+      return { ok: false, handled: false, reason: "Could not claim the workflow runner lease", code: "watchdog.workflow_claim_failed" };
+    }
+    workflow = Commands.normalizeWorkflow(state.workflow);
+    const prompt = Commands.workflowRecoveryPrompt(workflow);
+    if (!prompt) return { ok: false, handled: false, reason: "Could not build watchdog recovery prompt", code: "watchdog.prompt_empty" };
+    const queued = await queuePrompt(prompt, {
+      workflow,
+      source: `workflow:${workflow.kind}:watchdog`
+    });
+    if (!queued.ok) return { ...queued, handled: false };
+    await record(`Recovered interrupted generation (${reason})`, "warning", "command.workflow.watchdog_recovered");
+    return { ok: true, handled: true, sent: Boolean(queued.sent) };
+  }
+
   function schedulePoll(immediate = false) {
     window.clearTimeout(state.pollTimer);
     if (state.destroyed) return;
@@ -946,7 +988,7 @@
     state.lifecycleHandlers = [];
   }
 
-  window.__YOLO_COMMAND_RUNTIME__ = { version: Config.VERSION, destroy, getHealth };
+  window.__YOLO_COMMAND_RUNTIME__ = { version: Config.VERSION, destroy, getHealth, recoverStalledGeneration };
   mountUI();
   const api = engine();
   state.unregisterEngineClient = api?.registerClient?.(destroy) || null;

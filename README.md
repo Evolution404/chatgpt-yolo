@@ -56,6 +56,7 @@ The extension runs entirely in your browser. YOLO's settings, queues, templates,
 - `/rollover [focus]` for a strict machine-readable handoff into a fresh ChatGPT conversation.
 - Optional automatic rollover for newly started Goal/Loop workflows after a bounded number of chat-local turns, with a task-wide conversation cap.
 - Browser-restart recovery for in-flight rollover transactions without weakening the existing fail-closed send model.
+- Stuck-generation watchdog: warns after 5 minutes without assistant progress, requests Stop after 10 minutes, enforces a 30-minute absolute generation cap, and resumes from partial work instead of replaying the original prompt.
 - `/plan`, `/review`, `/fix`, `/handoff`, and `/continue` prompt shortcuts.
 - `/status`, `/pause`, `/resume`, `/stop`, `/settings`, and `/help` extension controls.
 - Command palette from `/` in an empty composer or `Cmd/Ctrl + Shift + P`.

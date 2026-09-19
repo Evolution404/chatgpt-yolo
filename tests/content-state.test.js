@@ -113,7 +113,7 @@ test("freshRuntime returns expected default runtime", () => {
 
   assert.ok(runtime.sessionStartedAt >= before && runtime.sessionStartedAt <= after);
   assert.equal(runtime.sessionActionCount, 0);
-  assert.equal(JSON.stringify(runtime.history), JSON.stringify({ approval: [], recovery: [], nudge: [], refresh: [], queue: [] }));
+  assert.equal(JSON.stringify(runtime.history), JSON.stringify({ approval: [], recovery: [], nudge: [], refresh: [], queue: [], watchdog: [] }));
   assert.equal(JSON.stringify(runtime.approvalSignatures), JSON.stringify([]));
   assert.equal(runtime.lastActionAt, 0);
   assert.equal(runtime.lastRefreshAt, 0);
@@ -136,9 +136,16 @@ test("normalizeRuntime fills missing fields and prunes stale history", () => {
       recovery: [],
       nudge: [old],
       refresh: [now],
-      queue: [old, old, now]
+      queue: [old, old, now],
+      watchdog: [old, now]
     },
-    nextQueueAt: 12345
+    nextQueueAt: 12345,
+    generationWatchdog: {
+      startedAt: now - 1000,
+      lastProgressAt: now - 500,
+      lastAssistantFingerprint: "abc",
+      stopRequestedAt: now - 100
+    }
   };
 
   context.sessionStorage.setItem(
@@ -151,7 +158,10 @@ test("normalizeRuntime fills missing fields and prunes stale history", () => {
   assert.equal(loaded.history.approval.length, 1);
   assert.equal(loaded.history.queue.length, 1);
   assert.equal(loaded.history.refresh.length, 1);
+  assert.equal(loaded.history.watchdog.length, 1);
   assert.equal(loaded.nextQueueAt, 12345);
+  assert.equal(loaded.generationWatchdog.lastAssistantFingerprint, "abc");
+  assert.equal(loaded.generationWatchdog.stopRequestedAt, now - 100);
   assert.ok(loaded.sessionStartedAt >= fresh.sessionStartedAt);
 });
 
@@ -192,6 +202,7 @@ test("runtimeSummary and responseState match commandApi expectations", () => {
   ContentState.state.runtime = ContentState.freshRuntime();
   ContentState.state.runtime.sessionActionCount = 2;
   ContentState.state.runtime.history.queue.push(now);
+  ContentState.state.runtime.history.watchdog.push(now);
   ContentState.state.blockedReason = "busy";
   ContentState.state.blockedCode = "composer.busy";
   ContentState.state.hydrated = true;
@@ -200,6 +211,8 @@ test("runtimeSummary and responseState match commandApi expectations", () => {
   const summary = ContentState.runtimeSummary();
   assert.equal(summary.sessionActionCount, 2);
   assert.equal(summary.queueCountLastHour, 1);
+  assert.equal(summary.watchdogCountLastHour, 1);
+  assert.equal(typeof summary.generationWatchdog, "object");
   assert.equal(summary.blockedReason, "busy");
   assert.equal(summary.blockedCode, "composer.busy");
   assert.ok(Object.hasOwn(summary, "nextRefreshAt"));

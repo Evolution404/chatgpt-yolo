@@ -141,6 +141,25 @@
     });
   }
 
+  function findStopButton(adapter, documentLike = document) {
+    if (!adapter) return null;
+    const explicit = uniqueElements(adapter.generationSelectors
+      .flatMap((selector) => Array.from(documentLike.querySelectorAll(selector))));
+    const direct = explicit.find((element) => visible(element) && !isDisabled(element));
+    if (direct) return direct;
+    return Array.from(documentLike.querySelectorAll("button")).find((button) => {
+      if (!visible(button) || isDisabled(button)) return false;
+      return /\b(stop generating|interrupt response|cancel generation)\b/i.test(buttonText(button));
+    }) || null;
+  }
+
+  function stopGeneration(adapter, documentLike = document) {
+    const button = findStopButton(adapter, documentLike);
+    if (!button) return false;
+    button.click();
+    return true;
+  }
+
   function findErrorState(adapter, documentLike = document) {
     if (!adapter) return null;
     const explicit = adapter.errorSelectors.flatMap((selector) => Array.from(documentLike.querySelectorAll(selector)));
@@ -356,6 +375,8 @@
     findComposer,
     findSendButton,
     isGenerating,
+    findStopButton,
+    stopGeneration,
     findErrorState,
     latestAssistantText,
     latestUserText,

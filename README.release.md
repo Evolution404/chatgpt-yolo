@@ -29,6 +29,7 @@ Then load `dist/yolo` as an unpacked extension.
 - Use `/goal` or `/loop` to run a bounded workflow with Pause, Edit, and Stop controls.
 - Use `/rollover` to hand off the current task into a fresh ChatGPT conversation without manual copy/paste.
 - Enable automatic conversation rollover in Advanced settings for newly started Goal/Loop workflows.
+- The stuck-generation watchdog is enabled by default with conservative 5/10/30 minute thresholds and can be tuned in Advanced -> Safety & engine.
 - Visit the extension options page to adjust profiles, limits, and recovery behavior.
 
 ## Privacy

@@ -105,7 +105,7 @@ Fault-injection coverage must include refresh/restart at every transaction phase
 Current validation on 2026-09-19:
 
 - rollover/config/runtime/UI targeted suite: 93/93 pass;
-- full repository suite: 295/295 pass;
+- full repository suite: 303/303 pass;
 - `npm run validate:core` passes end-to-end;
 - `npm run check` passes;
 - `npm run verify:extension` passes and confirms the public extension boundary;
@@ -114,6 +114,18 @@ Current validation on 2026-09-19:
 - `node scripts/no-bare-installs.mjs` passes;
 - no new browser permission or host permission was added;
 - browser-restart tests cover same-session tab isolation, restored source-route rebinding, and token-gated transient-route rebinding.
+
+### Stuck-generation watchdog
+
+Long-running unattended workflows must also survive a ChatGPT page that remains in a generating state without making useful output progress. The 1.2.0 candidate therefore includes a local watchdog with these defaults:
+
+- soft warning after 5 minutes without assistant text fingerprint changes;
+- request the visible `Stop generating` control after 10 minutes without progress;
+- absolute generation cap of 30 minutes even if output continues changing;
+- after requesting Stop, allow 30 seconds for the generation state to clear before a bounded same-chat refresh fallback;
+- at most 4 watchdog recovery actions per rolling hour by default.
+
+The watchdog never replays the interrupted user prompt. When an active Goal/Loop generation is successfully stopped, command-runtime atomically queues a dedicated recovery continuation that explicitly resumes from the partial response already visible in the conversation. For non-workflow chats, it may queue a plain `Continue` only after generation is confirmed idle. Watchdog state is kept in per-tab session storage so a refresh can finish the same recovery transaction instead of starting a duplicate one.
 
 Before a release is marked production-ready, perform a real unpacked-extension smoke test against the current ChatGPT DOM for both `/rollover` and one automatic threshold rollover. DOM behavior is intentionally not inferred solely from unit tests.
 

@@ -269,6 +269,18 @@
     ].join("\n\n");
   }
 
+  function workflowRecoveryPrompt(rawWorkflow) {
+    const workflow = normalizeWorkflow(rawWorkflow);
+    if (workflow.status === "idle" || !workflow.kind || !workflow.objective) return "";
+    return [
+      `Resume the interrupted YOLO ${workflow.kind === "goal" ? "Goal" : "Loop"} workflow for: ${workflow.objective}`,
+      "The previous assistant generation was stopped by a local stuck-generation watchdog because the page stopped making reliable progress.",
+      "Continue from whatever partial work is already visible in this conversation. Do not repeat completed work and do not resend or reinterpret the previous user prompt from scratch.",
+      `This is task iteration ${workflow.totalIterations + 1} of at most ${workflow.maxIterations} (chat-local turn ${workflow.iteration + 1}).`,
+      `At the very end, emit exactly one marker on its own line: ${markerNames(workflow)}. Missing or malformed markers pause the workflow.`
+    ].join("\n\n");
+  }
+
   function workflowPrompt(raw, phase = "initial") {
     const workflow = normalizeWorkflow(raw);
     if (workflow.status === "idle") return "";
@@ -411,6 +423,7 @@
     startWorkflow,
     setWorkflowStatus,
     workflowPrompt,
+    workflowRecoveryPrompt,
     evaluateResponse,
     decideWorkflowResponse,
     oneShotPrompt,

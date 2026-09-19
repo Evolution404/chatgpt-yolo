@@ -10,6 +10,10 @@ test("normalizes and clamps settings with interval invariants", () => {
     scanIntervalSec: 500,
     autoRolloverAfterTurns: 1,
     autoRolloverMaxConversations: 99,
+    generationWatchdogSoftStallMin: 20,
+    generationWatchdogHardStallMin: 5,
+    generationWatchdogAbsoluteLimitMin: 7,
+    generationWatchdogStopGraceSec: 1,
     queueMaxRetries: "2.6"
   });
   assert.equal(settings.queueIntervalMinSec, 50);
@@ -18,7 +22,18 @@ test("normalizes and clamps settings with interval invariants", () => {
   assert.equal(settings.scanIntervalSec, 60);
   assert.equal(settings.autoRolloverAfterTurns, 2);
   assert.equal(settings.autoRolloverMaxConversations, 25);
+  assert.equal(settings.generationWatchdogHardStallMin, 20);
+  assert.equal(settings.generationWatchdogAbsoluteLimitMin, 20);
+  assert.equal(settings.generationWatchdogStopGraceSec, 5);
   assert.equal(settings.queueMaxRetries, 3);
+});
+
+test("stuck generation watchdog defaults are conservative and enabled", () => {
+  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogEnabled, true);
+  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogSoftStallMin, 5);
+  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogHardStallMin, 10);
+  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogAbsoluteLimitMin, 30);
+  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogStopGraceSec, 30);
 });
 
 test("migrates legacy boolean setting names", () => {
