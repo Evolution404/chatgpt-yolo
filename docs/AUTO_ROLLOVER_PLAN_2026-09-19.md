@@ -16,6 +16,8 @@ The implementation must preserve YOLO's existing at-most-once/fail-closed reliab
 
 ## Phase 0 - Preserve reliability boundaries
 
+**Status: complete.**
+
 - Reuse the background-owned durable queue for the source-chat handoff prompt.
 - Keep all existing durable `/c/<id>` route checks.
 - Add only one narrow transient-route exception: the first bootstrap prompt in a persisted rollover transaction.
@@ -23,6 +25,8 @@ The implementation must preserve YOLO's existing at-most-once/fail-closed reliab
 - Treat an uncertain post-submit bootstrap as blocked/unknown; never retry automatically.
 
 ## Phase 1 - Rollover state and protocol
+
+**Status: complete.**
 
 Add a pure `rollover.js` state/protocol module with:
 
@@ -33,9 +37,11 @@ Add a pure `rollover.js` state/protocol module with:
 - bootstrap prompt generation;
 - exact handoff ownership check using the source prompt fingerprint.
 
-No token estimation is used. The implementation will later trigger rollover from bounded, observable counters and explicit control markers.
+No token estimation is used. Rollover is triggered only from bounded, observable workflow counters or the explicit `[YOLO:ROLLOVER]` control marker.
 
 ## Phase 2 - Manual rollover MVP
+
+**Status: complete at `931ec97`.**
 
 Implement `/rollover [focus]`:
 
@@ -52,16 +58,74 @@ Implement `/rollover [focus]`:
 
 ## Phase 3 - Durable recovery
 
-Add explicit bootstrap outcome states, browser/service-worker restart recovery, lease/idempotency keys, unknown-outcome handling, and rollover history. Recovery must never create a second successor chat when the first outcome is uncertain.
+**Status: core recovery implemented; bounded history remains for later UX work.**
+
+Implemented recovery invariants:
+
+- `handoff_queued -> awaiting_handoff -> bootstrap_pending -> bootstrap_submitting -> bootstrap_sent -> bound` is persisted in `chrome.storage.local`.
+- Bootstrap submission intent is persisted before touching the transient new-chat composer.
+- An uncertain post-submit outcome becomes `blocked`; it is never retried automatically.
+- Each browser lifetime receives a `chrome.storage.session` epoch. A normal second tab in the same browser session cannot take ownership of another tab's rollover.
+- After a real browser restart, a restored source or target `/c/<id>` route can rebind exactly one stale rollover transaction.
+- A restored transient New Chat may rebind only with the opaque `yolo-rollover=<transaction-id>` token created by YOLO itself.
+- The recovery token contains no handoff text or user-authored content and is removed from the URL after durable target binding.
+- Ambiguous matches fail closed rather than choosing one transaction.
+
+Rollover history is intentionally not required for correctness. A bounded user-facing history can be added with the Phase 5 task UI without expanding the execution surface.
 
 ## Phase 4 - Automatic rollover policy
 
-Add task-level counters and policy controls. Initial default target: warn around 10 automated turns and rollover around 12, rather than waiting for the ChatGPT conversation hard limit. Add `[YOLO:ROLLOVER]` as an explicit workflow control marker.
+**Status: implemented, opt-in by default.**
+
+- Advanced settings expose `Automatic conversation rollover`, `Turns before rollover`, and `Conversation limit`.
+- Default policy for a newly started workflow is disabled, with configured values of 12 chat-local turns and 10 conversations. Enabling the setting affects newly started Goal/Loop workflows; each workflow snapshots its policy so later per-conversation setting changes cannot silently alter a running task.
+- `iteration` is the number of completed workflow turns in the current ChatGPT conversation.
+- `totalIterations` is the task-wide count across all rollover conversations.
+- `maxIterations` remains a task-wide safety cap. `/loop 20` can never gain another 20 iterations merely by rolling into a fresh chat.
+- `conversationIndex` and `taskId` survive rollover and are restored into the successor workflow.
+- At the configured chat-local threshold, the runtime does not enqueue a continuation. The background atomically consumes the just-finished workflow response, pauses the source workflow, creates the rollover transaction, and enqueues the handoff.
+- `[YOLO:ROLLOVER]` is available only to workflows that started with automatic rollover enabled. It cannot bypass the task-wide iteration cap or conversation cap.
+- Reaching the conversation cap pauses the workflow instead of creating another chat.
 
 ## Phase 5 - UX
 
+**Status: partial.**
+
 Expose current task, conversation count, current-chat turns, total turns, last rollover, pause/stop, and `Rollover now` controls. Keep the default popup compact; advanced controls belong in the existing advanced surface.
+
+Current UI already exposes the three automatic-rollover settings in Advanced and `/status` reports the rollover phase, chat index, total turns, and policy. A richer task/history panel remains pending.
 
 ## Phase 6 - Hardening
 
+**Status: automated hardening substantially implemented; live ChatGPT browser smoke test remains.**
+
 Fault-injection coverage must include refresh/restart at every transaction phase, lost acknowledgements, network interruption, DOM selector drift, multiple ChatGPT tabs, composer drafts, route races, and source/target workflow ownership conflicts.
+
+Current validation on 2026-09-19:
+
+- rollover/config/runtime/UI targeted suite: 93/93 pass;
+- full repository suite: 291/295 pass;
+- the only four failures are the pre-existing `validate-asset-manifest` realpath failures documented in Baseline;
+- `npm run check` passes;
+- `npm run verify:extension` passes and confirms the public extension boundary;
+- `node scripts/package.mjs --check` passes with 39 packaged runtime files;
+- no new browser permission or host permission was added;
+- browser-restart tests cover same-session tab isolation, restored source-route rebinding, and token-gated transient-route rebinding.
+
+Before a release is marked production-ready, perform a real unpacked-extension smoke test against the current ChatGPT DOM for both `/rollover` and one automatic threshold rollover. DOM behavior is intentionally not inferred solely from unit tests.
+
+## Current user flow
+
+Manual cross-chat continuation:
+
+1. Open a saved ChatGPT conversation.
+2. Pause an active Goal/Loop if one is currently running.
+3. Run `/rollover` or `/rollover <focus>`.
+4. YOLO obtains a strict handoff, enters New Chat in the same tab, submits the persisted bootstrap prompt, binds the new `/c/<id>` conversation, and resumes the handed-off workflow when applicable.
+
+Automatic cross-chat continuation:
+
+1. In Advanced -> Safety & engine, enable `Automatic conversation rollover`.
+2. Set `Turns before rollover` and `Conversation limit` as desired. Defaults are 12 and 10.
+3. Start a new `/goal ...` or `/loop N ...` workflow. Existing workflows are not silently changed.
+4. When a completed workflow response reaches the chat-local threshold, or explicitly returns `[YOLO:ROLLOVER]`, YOLO performs the same strict handoff/bootstrap/bind sequence automatically.
