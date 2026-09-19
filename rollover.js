@@ -223,14 +223,15 @@
     }
     const extracted = extractHandoff(responseText);
     if (!extracted.ok) return { ...extracted, transaction: current };
-    const staged = withRevision(current, {
+    const staged = normalizeTransaction({ ...current,
       phase: "bootstrap_pending",
       pendingItemId: "",
       handoff: extracted.handoff,
       handoffFingerprint: extracted.fingerprint,
       responseCandidateFingerprint: "",
       responseCandidateSince: 0,
-      reason: "Handoff captured; new-chat bootstrap pending"
+      reason: "Handoff captured; new-chat bootstrap pending",
+      updatedAt: at
     }, at);
     const prompt = bootstrapPrompt(staged);
     return {

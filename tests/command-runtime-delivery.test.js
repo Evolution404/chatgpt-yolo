@@ -11,10 +11,14 @@ test("workflow sends refresh the background-owned atomic transition", () => {
 });
 
 test("failed workflow prompts are removed before the workflow blocks", () => {
+  const handlerStart = source.indexOf("async function handlePendingWorkflowItem");
+  const handlerEnd = source.indexOf("async function handleWorkflow", handlerStart);
+  const handler = source.slice(handlerStart, handlerEnd);
   const failedBranch = source.slice(
-    source.indexOf('if (item?.state === "failed")'),
-    source.indexOf("if (item) {", source.indexOf('if (item?.state === "failed")'))
+    source.indexOf('if (item?.state === "failed")', handlerStart),
+    source.indexOf("if (item) {", source.indexOf('if (item?.state === "failed")', handlerStart))
   );
+  assert.match(handler, /async function handlePendingWorkflowItem/);
   assert.match(failedBranch, /await removeQueueItem\(item\.id\)/);
   assert.match(failedBranch, /await markWorkflow\("blocked"/);
 });

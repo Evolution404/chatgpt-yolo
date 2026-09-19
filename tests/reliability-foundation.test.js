@@ -81,7 +81,19 @@ test('workflow chrome dispatches the truthful stop action', () => {
 
 test('package and background composition include the action coordinator', () => {
   assert.match(read('scripts/package.mjs'), /"coordinator\.js"/);
-  assert.match(read('background.js'), /importScripts\("config\.js", "shared\.js", "coordinator\.js", "portable-store\.js", "queue\.js", "commands\.js"\)/);
+  assert.match(read('background.js'), /importScripts\("config\.js", "shared\.js", "coordinator\.js", "portable-store\.js", "queue\.js", "commands\.js", "rollover\.js"\)/);
+});
+
+test('the only transient text submission surface is the persisted rollover bootstrap', () => {
+  const content = read('content.js');
+  const runtime = read('command-runtime.js');
+  const start = content.indexOf('async function submitTransientBootstrap');
+  const end = content.indexOf('function actionDedupeKey', start);
+  const bootstrap = content.slice(start, end);
+  assert.match(bootstrap, /!Config\.isSupportedUrl\(location\.href\) \|\| Config\.isDurablePageId\(startPageId\)/);
+  assert.match(bootstrap, /previousSnapshot = Platforms\.userMessageSnapshot/);
+  assert.match(bootstrap, /Platforms\.submissionObserved/);
+  assert.match(runtime, /phase: "bootstrap_submitting"[\s\S]{0,700}writeRollover\(submitting\)[\s\S]{0,300}submitTransientBootstrap/);
 });
 
 test('automatic dedupe identity is stable across cooldown boundaries', () => {

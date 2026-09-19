@@ -383,6 +383,74 @@
     }
   }
 
+  async function submitTransientBootstrap(prompt) {
+    const expectedText = String(prompt || "").trim();
+    if (!expectedText) return { ok: false, code: "rollover.bootstrap_empty", reason: "Bootstrap prompt is empty", deliveryAmbiguous: false };
+    if (!await ensureCurrentRoute()) {
+      return { ok: false, code: "route.changed", reason: "ChatGPT navigation is still in progress", deliveryAmbiguous: false };
+    }
+    const startPageId = currentPageId();
+    if (!Config.isSupportedUrl(location.href) || Config.isDurablePageId(startPageId)) {
+      return { ok: false, code: "rollover.bootstrap_route_invalid", reason: "Bootstrap is allowed only on a transient ChatGPT new-chat route", deliveryAmbiguous: false };
+    }
+    if (updateGenerationState()) {
+      return { ok: false, code: "rollover.bootstrap_generating", reason: "ChatGPT is already generating", deliveryAmbiguous: false };
+    }
+
+    let submissionAttempted = false;
+    try {
+      let composer = Platforms.findComposer(state.platform);
+      if (!composer) return { ok: false, code: "composer.missing", reason: "Message composer was not found", deliveryAmbiguous: false };
+      if (Platforms.composerText(composer).trim()) {
+        return { ok: false, code: "composer.busy", reason: "The new-chat composer contains a draft", deliveryAmbiguous: false };
+      }
+
+      const previousSnapshot = Platforms.userMessageSnapshot(state.platform);
+      const expectedFingerprint = Commands.fingerprint(expectedText);
+      Platforms.setComposerValue(composer, expectedText);
+      await sleep(120);
+      if (state.destroyed || currentPageId() !== startPageId) {
+        return { ok: false, code: "route.changed", reason: "New-chat navigation changed before bootstrap submission", deliveryAmbiguous: false };
+      }
+      composer = Platforms.findComposer(state.platform) || composer;
+      if (Commands.fingerprint(Platforms.composerText(composer)) !== expectedFingerprint) {
+        return { ok: false, code: "composer.write_unconfirmed", reason: "The composer did not retain the bootstrap prompt", deliveryAmbiguous: false };
+      }
+
+      submissionAttempted = true;
+      if (!Platforms.submitComposer(state.platform, composer)) {
+        return { ok: false, code: "composer.submit_failed", reason: "Bootstrap prompt could not be submitted", deliveryAmbiguous: true };
+      }
+
+      const confirmationDeadline = now() + 15_000;
+      let observed = false;
+      while (now() < confirmationDeadline) {
+        if (state.destroyed || !Config.isSupportedUrl(location.href)) {
+          return { ok: false, code: "route.changed", reason: "ChatGPT left the supported origin during bootstrap", deliveryAmbiguous: true };
+        }
+        if (Platforms.submissionObserved(state.platform, { expectedText, previousSnapshot })) observed = true;
+        const targetPageId = currentPageId();
+        if (observed && Config.isDurablePageId(targetPageId)) {
+          return { ok: true, targetPageId, deliveryAmbiguous: false };
+        }
+        await sleep(150);
+      }
+      return {
+        ok: false,
+        code: "rollover.bootstrap_unconfirmed",
+        reason: "The exact bootstrap message and successor conversation could not both be confirmed",
+        deliveryAmbiguous: true
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        code: "rollover.bootstrap_exception",
+        reason: Shared.errorMessage(error),
+        deliveryAmbiguous: submissionAttempted
+      };
+    }
+  }
+
   function actionDedupeKey(action, prompt, reason) {
     return `auto:${action}:${Commands.fingerprint(`${prompt}\n${reason}`)}`;
   }
@@ -990,6 +1058,7 @@
     getState: ContentState.responseState,
     ensureReady: ensureCurrentRoute,
     runAction: runManualAction,
+    submitTransientBootstrap,
     recordStatus: setLastAction,
     registerClient
   });

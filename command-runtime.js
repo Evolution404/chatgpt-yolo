@@ -6,8 +6,9 @@
   const Lifecycle = globalThis.YOLOLifecycle;
   const Platforms = globalThis.YOLOPlatforms;
   const Commands = globalThis.YOLOCommands;
+  const Rollover = globalThis.YOLORollover;
   const CommandUI = globalThis.YOLOCommandUI;
-  if (!Config || !Shared || !Lifecycle || !Platforms || !Commands || !CommandUI) return;
+  if (!Config || !Shared || !Lifecycle || !Platforms || !Commands || !Rollover || !CommandUI) return;
 
   if (window.__YOLO_COMMAND_RUNTIME__?.version === Config.VERSION) return;
   window.__YOLO_COMMAND_RUNTIME__?.destroy?.();
@@ -18,6 +19,8 @@
     destroyed: false,
     pageId: "",
     workflow: Commands.freshWorkflow(),
+    rollover: null,
+    rolloverLoaded: false,
     ui: null,
     pollTimer: null,
     routeInFlight: false,
@@ -38,6 +41,42 @@
     soft: true,
     isDestroyed: () => state.destroyed
   });
+
+  function applyRolloverResponse(response) {
+    if (response?.ok) state.rollover = response.transaction ? Rollover.normalizeTransaction(response.transaction) : null;
+    return response;
+  }
+
+  async function readRollover() {
+    const response = applyRolloverResponse(await backgroundSend({ type: "YOLO_ROLLOVER_GET" }));
+    state.rolloverLoaded = true;
+    return response?.ok ? state.rollover : null;
+  }
+
+  async function ensureRolloverLoaded() {
+    if (!state.rolloverLoaded) await readRollover();
+    return state.rollover;
+  }
+
+  async function writeRollover(transaction) {
+    const current = state.rollover;
+    if (!current || !transaction || current.id !== transaction.id) return false;
+    const response = applyRolloverResponse(await backgroundSend({
+      type: "YOLO_ROLLOVER_UPDATE",
+      expectedRevision: current.revision,
+      transaction: Rollover.normalizeTransaction({ ...transaction, revision: current.revision, updatedAt: now() })
+    }));
+    return Boolean(response?.ok);
+  }
+
+  async function blockRollover(reason, code = "rollover.blocked") {
+    const current = state.rollover;
+    if (!current) return false;
+    const next = Rollover.normalizeTransaction({ ...current, phase: "blocked", reason, updatedAt: now() });
+    const saved = await writeRollover(next);
+    if (saved) await record(`Rollover blocked: ${reason}`, "warning", code);
+    return saved;
+  }
 
 
   function adapter() {
@@ -288,6 +327,7 @@
     state.ui?.showStatus({
       Conversation: state.pageId || "Unavailable",
       Workflow: workflow.status === "idle" ? "None" : `/${workflow.kind} · ${workflow.status}`,
+      Rollover: state.rollover ? state.rollover.phase : "None",
       Objective: workflow.status === "idle" ? "—" : workflow.objective,
       Iteration: workflow.status === "idle" ? "—" : `${workflow.iteration}/${workflow.maxIterations}`,
       Queue: queue?.ok ? `${queue.state.items.length} item${queue.state.items.length === 1 ? "" : "s"}${queue.state.paused ? " · paused" : ""}` : "Unavailable",
@@ -300,10 +340,243 @@
     return { ok: true, focusComposer: false };
   }
 
+  async function startRollover(args = "") {
+    await syncRoute();
+    await ensureRolloverLoaded();
+    if (!Config.isDurablePageId(state.pageId)) return { ok: false, reason: "Open a saved ChatGPT conversation before starting rollover", keepOpen: true };
+    if (state.rollover && state.rollover.phase !== "bound") {
+      return { ok: false, reason: `Rollover is already ${state.rollover.phase.replaceAll("_", " ")}`, keepOpen: true };
+    }
+    const api = engine();
+    const apiState = api?.getState?.() || {};
+    if (apiState.generating) return { ok: false, reason: "Wait for the current ChatGPT response to finish before rollover", keepOpen: true };
+
+    const latest = await readWorkflow(state.pageId);
+    state.workflow = latest;
+    syncUI();
+    if (latest.status === "running") {
+      return { ok: false, reason: "Pause the active goal or loop before manual rollover so no workflow turn can race the handoff", keepOpen: true };
+    }
+
+    const response = applyRolloverResponse(await backgroundSend({
+      type: "YOLO_ROLLOVER_START",
+      pageId: state.pageId,
+      focus: args,
+      ownerId: state.ownerId,
+      baselineAssistantFingerprint: latestAssistantFingerprint(),
+      sourceWorkflow: latest
+    }));
+    if (!response?.ok) return { ...response, keepOpen: true };
+    const sent = await api?.runAction?.("queue-next");
+    await record(sent ? "Started rollover handoff" : "Queued rollover handoff", "success", "command.rollover.started");
+    return { ok: true };
+  }
+
+  async function handleRolloverHandoffQueue(transaction, apiState) {
+    const queue = await queueState(transaction.sourcePageId);
+    if (!queue?.ok) return false;
+    const item = queue.state.items.find((entry) => entry.id === transaction.pendingItemId);
+    if (item?.state === "failed") {
+      await removeQueueItem(item.id, transaction.sourcePageId);
+      await blockRollover(item.error || "Rollover handoff prompt failed", "rollover.handoff_delivery_failed");
+      return true;
+    }
+    if (item) {
+      if (!apiState.generating && now() - state.lastQueueAttemptAt >= POLL_MS) {
+        state.lastQueueAttemptAt = now();
+        await engine()?.runAction?.("queue-next");
+      }
+      return false;
+    }
+    const completedExactly = queue.state.completions.some((completion) =>
+      completion.itemId === transaction.pendingItemId && completion.sourceId === transaction.id);
+    if (!completedExactly) {
+      await blockRollover("Rollover handoff prompt disappeared before confirmed delivery", "rollover.handoff_prompt_removed");
+      return true;
+    }
+    const next = Rollover.normalizeTransaction({
+      ...transaction,
+      phase: "awaiting_handoff",
+      pendingItemId: "",
+      reason: "Waiting for strict handoff response",
+      updatedAt: now()
+    });
+    return writeRollover(next);
+  }
+
+  async function handleRolloverHandoffResponse(transaction, apiState) {
+    if (apiState.generating || now() - transaction.lastPromptAt < RESPONSE_SETTLE_MS) return false;
+    const assistantText = Platforms.latestAssistantText(adapter());
+    const candidateFingerprint = Commands.fingerprint(assistantText);
+    if (!assistantText || candidateFingerprint === transaction.baselineAssistantFingerprint) return false;
+    if (transaction.responseCandidateFingerprint !== candidateFingerprint) {
+      const next = Rollover.normalizeTransaction({
+        ...transaction,
+        responseCandidateFingerprint: candidateFingerprint,
+        responseCandidateSince: now(),
+        reason: "Waiting for rollover handoff response to settle",
+        updatedAt: now()
+      });
+      await writeRollover(next);
+      return false;
+    }
+    const quietSince = Math.max(transaction.responseCandidateSince, apiState.lastDomActivityAt || 0, apiState.lastGenerationAt || 0);
+    if (now() - quietSince < Lifecycle.MARKER_RESPONSE_STABLE_MS) return false;
+    const accepted = Rollover.acceptHandoff(transaction, assistantText, {
+      userFingerprint: latestUserFingerprint(),
+      at: now()
+    });
+    if (!accepted.ok) {
+      await blockRollover(accepted.reason || "Rollover handoff was invalid", accepted.code || "rollover.handoff_invalid");
+      return true;
+    }
+    if (!await writeRollover(accepted.transaction)) return false;
+    await record("Captured rollover handoff; opening a new chat", "success", "rollover.handoff_captured");
+    location.assign(`${location.origin}/`);
+    return true;
+  }
+
+  async function adoptRolloverWorkflow(transaction) {
+    if (!Config.isDurablePageId(state.pageId) || state.pageId !== transaction.targetPageId) return false;
+    const source = transaction.sourceWorkflow;
+    if (!source || source.status === "completed") {
+      return writeRollover(Rollover.normalizeTransaction({ ...transaction, phase: "bound", reason: "Successor conversation bound", updatedAt: now() }));
+    }
+
+    const current = await readWorkflow(state.pageId);
+    if (current.status !== "idle") {
+      const alreadyAdopted = current.kind === source.kind
+        && current.objective === source.objective
+        && current.promptFingerprint === transaction.bootstrapPromptFingerprint;
+      if (alreadyAdopted) {
+        state.workflow = current;
+        syncUI();
+        return writeRollover(Rollover.normalizeTransaction({ ...transaction, phase: "bound", reason: "Successor workflow already adopted", updatedAt: now() }));
+      }
+      await blockRollover("The successor conversation already contains a different YOLO workflow", "rollover.target_workflow_conflict");
+      return true;
+    }
+
+    const args = source.kind === "loop" ? `${source.maxIterations} ${source.objective}` : source.objective;
+    const started = Commands.startWorkflow(source.kind, args, {
+      at: now(),
+      baselineFingerprint: latestAssistantFingerprint()
+    });
+    if (!started.ok) {
+      await blockRollover(started.reason || "Could not restore the workflow in the successor conversation", "rollover.workflow_restore_failed");
+      return true;
+    }
+    const workflow = Commands.normalizeWorkflow({
+      ...started.workflow,
+      iteration: 0,
+      pendingItemId: "",
+      awaitingResponse: true,
+      sawGeneration: Boolean(engine()?.getState?.().generating),
+      promptFingerprint: transaction.bootstrapPromptFingerprint,
+      lastPromptAt: transaction.bootstrapSubmittedAt || now(),
+      runnerId: "",
+      runnerExpiresAt: 0,
+      reason: "Resumed after conversation rollover",
+      updatedAt: now()
+    });
+    state.workflow = workflow;
+    const saved = await writeWorkflow(workflow, state.pageId);
+    if (!saved) {
+      await blockRollover("Could not persist the restored workflow in the successor conversation", "rollover.workflow_restore_conflict");
+      return true;
+    }
+    return writeRollover(Rollover.normalizeTransaction({ ...state.rollover, phase: "bound", reason: "Successor conversation and workflow bound", updatedAt: now() }));
+  }
+
+  async function handleRolloverBootstrap(transaction) {
+    const api = engine();
+    const currentPageId = Config.pageId(location.href);
+    if (transaction.phase === "bootstrap_submitting") {
+      if (Config.isDurablePageId(currentPageId) && latestUserFingerprint() === transaction.bootstrapPromptFingerprint) {
+        const recovered = Rollover.normalizeTransaction({
+          ...transaction,
+          phase: "bootstrap_sent",
+          targetPageId: currentPageId,
+          bootstrapSubmittedAt: transaction.bootstrapSubmittedAt || now(),
+          reason: "Recovered confirmed bootstrap after route transition",
+          updatedAt: now()
+        });
+        if (await writeRollover(recovered)) {
+          await syncRoute();
+          return adoptRolloverWorkflow(state.rollover);
+        }
+        return false;
+      }
+      await blockRollover("Bootstrap submission outcome is unknown on the transient route; automatic retry is disabled", "rollover.bootstrap_unknown");
+      return true;
+    }
+    if (transaction.phase === "bootstrap_sent") {
+      await syncRoute();
+      if (state.pageId !== transaction.targetPageId) {
+        await blockRollover("The tab left the confirmed successor conversation before workflow adoption", "rollover.target_route_lost");
+        return true;
+      }
+      return adoptRolloverWorkflow(state.rollover || transaction);
+    }
+    if (transaction.phase !== "bootstrap_pending") return false;
+    if (Config.isDurablePageId(currentPageId)) {
+      await blockRollover("The tab navigated to another saved conversation before the new-chat bootstrap started", "rollover.route_conflict");
+      return true;
+    }
+    if (!api || !await api.ensureReady()) return false;
+
+    const submitting = Rollover.normalizeTransaction({
+      ...transaction,
+      phase: "bootstrap_submitting",
+      bootstrapSubmittedAt: now(),
+      reason: "Bootstrap submission intent persisted",
+      updatedAt: now()
+    });
+    if (!await writeRollover(submitting)) return false;
+    const result = await api.submitTransientBootstrap(state.rollover.bootstrapPrompt);
+    if (!result?.ok) {
+      await blockRollover(result?.reason || "Bootstrap submission failed", result?.code || "rollover.bootstrap_failed");
+      return true;
+    }
+    await syncRoute();
+    const sent = Rollover.normalizeTransaction({
+      ...state.rollover,
+      phase: "bootstrap_sent",
+      targetPageId: result.targetPageId,
+      reason: "Exact bootstrap message confirmed in successor conversation",
+      updatedAt: now()
+    });
+    if (!await writeRollover(sent)) return false;
+    return adoptRolloverWorkflow(state.rollover);
+  }
+
+  async function handleRollover() {
+    const transaction = await ensureRolloverLoaded();
+    if (!transaction || ["bound", "blocked"].includes(transaction.phase)) return false;
+    const currentPageId = Config.pageId(location.href);
+    if (currentPageId === transaction.sourcePageId) {
+      const apiState = engine()?.getState?.() || {};
+      if (transaction.phase === "handoff_queued") return handleRolloverHandoffQueue(transaction, apiState);
+      if (transaction.phase === "awaiting_handoff") return handleRolloverHandoffResponse(transaction, apiState);
+      if (transaction.phase === "bootstrap_pending") {
+        location.assign(`${location.origin}/`);
+        return true;
+      }
+      if (["bootstrap_submitting", "bootstrap_sent"].includes(transaction.phase)) {
+        await blockRollover("The tab returned to the source conversation after bootstrap submission began; automatic recovery is unsafe", "rollover.source_route_returned");
+        return true;
+      }
+      return false;
+    }
+    return handleRolloverBootstrap(transaction);
+  }
+
   async function executeCommandUnlocked(name, args = "") {
     await syncRoute();
     const api = engine();
     if (!api || !await api.ensureReady()) return { ok: false, reason: "YOLO is not ready in this conversation", keepOpen: true };
+    await ensureRolloverLoaded();
+    if (name === "rollover") return startRollover(args);
     if (["goal", "loop"].includes(name)) return startWorkflow(name, args);
     if (["plan", "review", "fix", "handoff", "continue"].includes(name)) return runOneShot(name, args);
     if (name === "status") return showStatus();
@@ -475,6 +748,7 @@
     try {
       await withWorkflowLock(async () => {
         await syncRoute();
+        await handleRollover();
         await handleWorkflow();
       });
       syncUI();

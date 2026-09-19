@@ -16,6 +16,7 @@ export const RUNTIME_FILES = Object.freeze([
   "portable-store.js",
   "queue.js",
   "commands.js",
+  "rollover.js",
   "platforms.js",
   "command-ui.js",
   "content-state.js",
