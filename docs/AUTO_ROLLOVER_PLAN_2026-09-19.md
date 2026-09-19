@@ -11,8 +11,9 @@ The implementation must preserve YOLO's existing at-most-once/fail-closed reliab
 - Fork: `Evolution404/chatgpt-yolo`
 - Upstream baseline: `kartikkabadi/chatgpt-yolo` `main` at `d018c6a`
 - Branch: `feat/auto-rollover-20260919`
-- Existing `npm run validate:core`: 265/269 tests pass in the current DevSpace/macOS checkout.
-- The four pre-existing failures are all in `tests/validate-asset-manifest.test.js` and report `unsafe path after realpath` for temporary media paths. They were present before rollover changes and must not be hidden by weakening the path-safety checks.
+- Initial `npm run validate:core` baseline: 265/269 tests passed in the current DevSpace/macOS checkout. The four failures were all in `tests/validate-asset-manifest.test.js` and reported `unsafe path after realpath` for temporary media paths.
+- Root cause: on macOS the temporary directory may be addressed through `/var/...` while `realpathSync()` canonicalizes it to `/private/var/...`. The production validator was correctly comparing against the supplied root; the test fixture supplied a non-canonical root.
+- Resolution: the test-only `tmpDir()` helper now canonicalizes the created directory with `fs.realpathSync(...)`. The production path-safety validator was not relaxed or changed.
 
 ## Phase 0 - Preserve reliability boundaries
 
@@ -104,11 +105,13 @@ Fault-injection coverage must include refresh/restart at every transaction phase
 Current validation on 2026-09-19:
 
 - rollover/config/runtime/UI targeted suite: 93/93 pass;
-- full repository suite: 291/295 pass;
-- the only four failures are the pre-existing `validate-asset-manifest` realpath failures documented in Baseline;
+- full repository suite: 295/295 pass;
+- `npm run validate:core` passes end-to-end;
 - `npm run check` passes;
 - `npm run verify:extension` passes and confirms the public extension boundary;
 - `node scripts/package.mjs --check` passes with 39 packaged runtime files;
+- `npm run package` successfully produces `dist/yolo`;
+- `node scripts/no-bare-installs.mjs` passes;
 - no new browser permission or host permission was added;
 - browser-restart tests cover same-session tab isolation, restored source-route rebinding, and token-gated transient-route rebinding.
 
