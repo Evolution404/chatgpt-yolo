@@ -38,12 +38,29 @@ test("creates normalized persistent goal and loop workflows", () => {
   assert.equal(goal.workflow.lastAssistantFingerprint, "old");
   assert.equal(goal.workflow.maxIterations, Commands.MAX_ITERATIONS);
   assert.equal(goal.workflow.revision, 0);
+  assert.equal(goal.workflow.autoRolloverEnabled, false);
+  assert.equal(goal.workflow.conversationIndex, 1);
+  assert.ok(goal.workflow.taskId);
   assert.match(Commands.workflowPrompt(goal.workflow, "initial"), /\[YOLO:CONTINUE\]/);
 
   const loop = Commands.startWorkflow("loop", "4 review again", { at: 1000 });
   assert.equal(loop.workflow.maxIterations, 4);
   assert.equal(loop.workflow.objective, "review again");
-  assert.match(Commands.workflowPrompt(loop.workflow, "continue"), /Iteration 1 of 4/);
+  assert.match(Commands.workflowPrompt(loop.workflow, "continue"), /Task iteration 1 of 4/);
+});
+
+test("workflow rollover policy is normalized and rollover markers are opt-in", () => {
+  const started = Commands.startWorkflow("goal", "Long audit", {
+    at: 1000,
+    rolloverPolicy: { enabled: true, afterTurns: 9, maxConversations: 6 }
+  });
+  assert.equal(started.workflow.autoRolloverEnabled, true);
+  assert.equal(started.workflow.autoRolloverAfterTurns, 9);
+  assert.equal(started.workflow.autoRolloverMaxConversations, 6);
+  assert.match(Commands.workflowPrompt(started.workflow, "initial"), /\[YOLO:ROLLOVER\]/);
+
+  const legacy = Commands.startWorkflow("goal", "Short audit", { at: 1000 }).workflow;
+  assert.doesNotMatch(Commands.workflowPrompt(legacy, "initial"), /\[YOLO:ROLLOVER\]/);
 });
 
 test("workflow response markers are unique, terminal, and case-insensitive", () => {
@@ -52,6 +69,7 @@ test("workflow response markers are unique, terminal, and case-insensitive", () 
   assert.equal(Commands.evaluateResponse("[YOLO:DONE]\nbut actually keep going"), "malformed");
   assert.equal(Commands.evaluateResponse("inline [YOLO:DONE]"), "missing");
   assert.equal(Commands.evaluateResponse("prefix\n[YOLO:DONE]"), "done");
+  assert.equal(Commands.evaluateResponse("handoff now\n[YOLO:ROLLOVER]"), "rollover");
   assert.equal(Commands.evaluateResponse("work\n[YOLO:BLOCKED]\nmore\n[YOLO:DONE]"), "malformed");
   assert.equal(Commands.evaluateResponse("no marker"), "missing");
 });
@@ -121,6 +139,7 @@ test("workflow response decisions enforce ownership, markers, and caps", () => {
   });
   assert.equal(continued.action, "continue");
   assert.equal(continued.workflow.iteration, 1);
+  assert.equal(continued.workflow.totalIterations, 1);
 
   const capped = Commands.decideWorkflowResponse({ ...continued.workflow, awaitingResponse: true }, "more\n[YOLO:CONTINUE]", {
     userFingerprint: "owned",
@@ -134,6 +153,62 @@ test("workflow response decisions enforce ownership, markers, and caps", () => {
     at: 1300
   });
   assert.equal(done.action, "completed");
+});
+
+test("rollover response requires the workflow rollover policy", () => {
+  const disabled = Commands.normalizeWorkflow({
+    kind: "goal",
+    objective: "ship",
+    status: "running",
+    awaitingResponse: true,
+    promptFingerprint: "owned"
+  }, 1000);
+  assert.equal(Commands.decideWorkflowResponse(disabled, "handoff\n[YOLO:ROLLOVER]", {
+    userFingerprint: "owned",
+    at: 1100
+  }).action, "paused");
+
+  const enabled = Commands.normalizeWorkflow({ ...disabled, autoRolloverEnabled: true }, 1000);
+  assert.equal(Commands.decideWorkflowResponse(enabled, "handoff\n[YOLO:ROLLOVER]", {
+    userFingerprint: "owned",
+    at: 1100
+  }).action, "rollover");
+});
+
+test("iteration safety cap remains task-wide across conversation rollover", () => {
+  const workflow = Commands.normalizeWorkflow({
+    kind: "loop",
+    objective: "bounded work",
+    status: "running",
+    maxIterations: 4,
+    iteration: 0,
+    totalIterations: 3,
+    conversationIndex: 2,
+    awaitingResponse: true,
+    promptFingerprint: "owned",
+    autoRolloverEnabled: true
+  }, 1000);
+  const result = Commands.decideWorkflowResponse(workflow, "one more\n[YOLO:CONTINUE]", {
+    userFingerprint: "owned",
+    at: 1100
+  });
+  assert.equal(result.action, "paused");
+  assert.equal(result.code, "command.workflow.cap_reached");
+  assert.equal(result.workflow.iteration, 1);
+  assert.equal(result.workflow.totalIterations, 4);
+
+  const rolloverAtCap = Commands.decideWorkflowResponse({
+    ...workflow,
+    totalIterations: 3,
+    iteration: 0,
+    awaitingResponse: true,
+    promptFingerprint: "owned"
+  }, "handoff instead\n[YOLO:ROLLOVER]", {
+    userFingerprint: "owned",
+    at: 1200
+  });
+  assert.equal(rolloverAtCap.action, "paused");
+  assert.equal(rolloverAtCap.code, "command.workflow.cap_reached");
 });
 
 test("awaiting workflows retain and clear response stability candidates safely", () => {

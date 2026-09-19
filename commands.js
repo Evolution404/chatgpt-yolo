@@ -9,10 +9,12 @@
   const MAX_OBJECTIVE_LENGTH = 4000;
   const MAX_ITERATIONS = 50;
   const DEFAULT_MAX_ITERATIONS = 12;
+  const DEFAULT_AUTO_ROLLOVER_TURNS = 12;
+  const DEFAULT_AUTO_ROLLOVER_MAX_CONVERSATIONS = 10;
   const WORKFLOW_STATUSES = new Set(["idle", "running", "paused", "completed", "blocked"]);
   const WORKFLOW_KINDS = new Set(["goal", "loop"]);
-  const STANDALONE_MARKER_RE = /(?:^|\n)[ \t]*\[YOLO:(CONTINUE|DONE|BLOCKED)\][ \t]*(?=\n|$)/gi;
-  const TERMINAL_MARKER_RE = /(?:^|\n)[ \t]*\[YOLO:(CONTINUE|DONE|BLOCKED)\][ \t]*$/i;
+  const STANDALONE_MARKER_RE = /(?:^|\n)[ \t]*\[YOLO:(CONTINUE|DONE|BLOCKED|ROLLOVER)\][ \t]*(?=\n|$)/gi;
+  const TERMINAL_MARKER_RE = /(?:^|\n)[ \t]*\[YOLO:(CONTINUE|DONE|BLOCKED|ROLLOVER)\][ \t]*$/i;
 
   const COMMANDS = Object.freeze([
     Object.freeze({ name: "goal", title: "Goal", description: "Start a marker-driven objective that YOLO can continue for bounded turns.", args: "objective", group: "Automated workflows", kind: "workflow" }),
@@ -103,6 +105,12 @@
       status: "idle",
       maxIterations: DEFAULT_MAX_ITERATIONS,
       iteration: 0,
+      taskId: "",
+      conversationIndex: 1,
+      totalIterations: 0,
+      autoRolloverEnabled: false,
+      autoRolloverAfterTurns: DEFAULT_AUTO_ROLLOVER_TURNS,
+      autoRolloverMaxConversations: DEFAULT_AUTO_ROLLOVER_MAX_CONVERSATIONS,
       pendingItemId: "",
       awaitingResponse: false,
       sawGeneration: false,
@@ -145,6 +153,12 @@
       status,
       maxIterations: clamp(Math.round(finite(raw.maxIterations, DEFAULT_MAX_ITERATIONS)), 1, MAX_ITERATIONS),
       iteration: clamp(Math.round(finite(raw.iteration, 0)), 0, MAX_ITERATIONS),
+      taskId: cleanText(raw.taskId, 180) || cleanText(raw.id, 180) || makeId("task"),
+      conversationIndex: clamp(Math.round(finite(raw.conversationIndex, 1)), 1, 25),
+      totalIterations: Math.max(0, Math.round(finite(raw.totalIterations, finite(raw.iteration, 0)))),
+      autoRolloverEnabled: Boolean(raw.autoRolloverEnabled),
+      autoRolloverAfterTurns: clamp(Math.round(finite(raw.autoRolloverAfterTurns, DEFAULT_AUTO_ROLLOVER_TURNS)), 2, 40),
+      autoRolloverMaxConversations: clamp(Math.round(finite(raw.autoRolloverMaxConversations, DEFAULT_AUTO_ROLLOVER_MAX_CONVERSATIONS)), 2, 25),
       pendingItemId: cleanText(raw.pendingItemId, 180),
       awaitingResponse: Boolean(raw.awaitingResponse),
       sawGeneration: Boolean(raw.sawGeneration),
@@ -163,7 +177,7 @@
     };
   }
 
-  function startWorkflow(kind, input, { at = Date.now(), baselineFingerprint = "" } = {}) {
+  function startWorkflow(kind, input, { at = Date.now(), baselineFingerprint = "", rolloverPolicy = null } = {}) {
     if (!WORKFLOW_KINDS.has(kind)) return { ok: false, reason: "Unsupported workflow type" };
     const parsed = kind === "loop" ? parseLoopArgs(input) : { objective: cleanText(input), maxIterations: MAX_ITERATIONS };
     if (!parsed.objective) return { ok: false, reason: `/${kind} requires an objective` };
@@ -176,6 +190,12 @@
         status: "running",
         maxIterations: parsed.maxIterations,
         iteration: 0,
+        taskId: makeId("task"),
+        conversationIndex: 1,
+        totalIterations: 0,
+        autoRolloverEnabled: Boolean(rolloverPolicy?.enabled),
+        autoRolloverAfterTurns: rolloverPolicy?.afterTurns,
+        autoRolloverMaxConversations: rolloverPolicy?.maxConversations,
         baselineFingerprint,
         lastAssistantFingerprint: baselineFingerprint,
         createdAt: at,
@@ -202,13 +222,21 @@
     return workflow;
   }
 
+  function markerNames(workflow) {
+    return workflow.autoRolloverEnabled
+      ? "[YOLO:CONTINUE], [YOLO:DONE], [YOLO:BLOCKED], or [YOLO:ROLLOVER]"
+      : "[YOLO:CONTINUE], [YOLO:DONE], or [YOLO:BLOCKED]";
+  }
+
   function goalInitialPrompt(workflow) {
     return [
       "You are now working in YOLO Goal mode.",
       `Persistent objective: ${workflow.objective}`,
       "Work toward the objective concretely. Inspect the current conversation and continue from the actual state instead of restarting or repeating prior commentary.",
       "At the very end of every response, emit exactly one control marker on its own line:",
-      "[YOLO:CONTINUE] when more work remains toward the objective; [YOLO:DONE] only when the objective is genuinely complete; [YOLO:BLOCKED] when specific user input or unavailable access is required.",
+      workflow.autoRolloverEnabled
+        ? "[YOLO:CONTINUE] when more work remains; [YOLO:DONE] only when complete; [YOLO:BLOCKED] when user input or unavailable access is required; [YOLO:ROLLOVER] only when this conversation should be handed off early because its context is becoming too long or unreliable."
+        : "[YOLO:CONTINUE] when more work remains toward the objective; [YOLO:DONE] only when the objective is genuinely complete; [YOLO:BLOCKED] when specific user input or unavailable access is required.",
       "Do not emit more than one marker. Begin now."
     ].join("\n\n");
   }
@@ -216,9 +244,9 @@
   function goalContinuationPrompt(workflow) {
     return [
       `Continue YOLO Goal mode for this persistent objective: ${workflow.objective}`,
-      `This is iteration ${workflow.iteration + 1} of at most ${workflow.maxIterations}.`,
+      `This is task iteration ${workflow.totalIterations + 1} of at most ${workflow.maxIterations} (chat-local turn ${workflow.iteration + 1}).`,
       "Continue from the latest completed work. Critically inspect assumptions, close gaps, execute the next concrete steps, and validate what you change. Do not repeat the previous answer.",
-      "End with exactly one marker on its own line: [YOLO:CONTINUE], [YOLO:DONE], or [YOLO:BLOCKED]."
+      `End with exactly one marker on its own line: ${markerNames(workflow)}.`
     ].join("\n\n");
   }
 
@@ -228,16 +256,16 @@
       `Loop objective: ${workflow.objective}`,
       `Maximum iterations: ${workflow.maxIterations}.`,
       "Perform one meaningful iteration now. Build on the current conversation, make concrete progress, inspect your own work, and avoid repeating prior commentary.",
-      "At the very end, emit exactly one marker on its own line: [YOLO:DONE] if complete, [YOLO:BLOCKED] if user input is required, or [YOLO:CONTINUE] when another iteration would help. Missing or malformed markers pause the loop."
+      `At the very end, emit exactly one marker on its own line: ${markerNames(workflow)}. Use DONE only if complete, BLOCKED only if user input is required, CONTINUE when another iteration would help, and ROLLOVER only when it is available and this conversation should be handed off early. Missing or malformed markers pause the loop.`
     ].join("\n\n");
   }
 
   function loopContinuationPrompt(workflow) {
     return [
       `Run the next YOLO Loop iteration for: ${workflow.objective}`,
-      `Iteration ${workflow.iteration + 1} of ${workflow.maxIterations}.`,
+      `Task iteration ${workflow.totalIterations + 1} of ${workflow.maxIterations} (chat-local turn ${workflow.iteration + 1}).`,
       "Continue from the latest work, find the highest-value unfinished step, execute it, and validate the result. Do not restate the objective or repeat the prior response.",
-      "At the very end, emit exactly one marker on its own line: [YOLO:DONE], [YOLO:BLOCKED], or [YOLO:CONTINUE]. Missing or malformed markers pause the loop."
+      `At the very end, emit exactly one marker on its own line: ${markerNames(workflow)}. Missing or malformed markers pause the loop.`
     ].join("\n\n");
   }
 
@@ -281,6 +309,7 @@
     workflow.lastAssistantFingerprint = fingerprint(text);
     workflow.lastResponseAt = at;
     workflow.iteration += 1;
+    workflow.totalIterations += 1;
     workflow.updatedAt = at;
     const outcome = evaluateResponse(text);
 
@@ -308,13 +337,19 @@
         code: "command.workflow.marker_malformed"
       };
     }
-    if (workflow.iteration >= workflow.maxIterations) {
+    if (workflow.totalIterations >= workflow.maxIterations) {
       return {
         workflow,
         action: "paused",
         reason: `Reached the ${workflow.maxIterations}-iteration safety cap`,
         code: "command.workflow.cap_reached"
       };
+    }
+    if (outcome === "rollover") {
+      if (!workflow.autoRolloverEnabled) {
+        return { workflow, action: "paused", reason: "ChatGPT requested rollover but automatic rollover is disabled for this workflow", code: "command.workflow.rollover_disabled" };
+      }
+      return { workflow, action: "rollover", reason: "ChatGPT requested an early conversation rollover", code: "command.workflow.rollover" };
     }
     return { workflow, action: "continue", reason: "Continue workflow", code: "command.workflow.continue" };
   }
@@ -364,6 +399,8 @@
     MAX_OBJECTIVE_LENGTH,
     MAX_ITERATIONS,
     DEFAULT_MAX_ITERATIONS,
+    DEFAULT_AUTO_ROLLOVER_TURNS,
+    DEFAULT_AUTO_ROLLOVER_MAX_CONVERSATIONS,
     command,
     filterCommands,
     parseInvocation,

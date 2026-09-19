@@ -62,14 +62,45 @@ test("workflow snapshots retain objective and per-chat iteration policy without 
     status: "paused",
     maxIterations: 12,
     iteration: 8,
+    taskId: "task-1",
+    conversationIndex: 3,
+    totalIterations: 28,
+    autoRolloverEnabled: true,
+    autoRolloverAfterTurns: 10,
+    autoRolloverMaxConversations: 8,
     runnerId: "tab-a",
     runnerExpiresAt: 9999
   }, 1000);
   assert.deepEqual(Rollover.workflowSnapshot(workflow), {
+    id: workflow.id,
     kind: "loop",
     objective: "continue overnight",
     maxIterations: 12,
     iteration: 8,
+    taskId: "task-1",
+    conversationIndex: 3,
+    totalIterations: 28,
+    autoRolloverEnabled: true,
+    autoRolloverAfterTurns: 10,
+    autoRolloverMaxConversations: 8,
     status: "paused"
   });
+});
+
+test("automatic rollover boundary uses chat-local turns and a task conversation cap", () => {
+  const base = Commands.normalizeWorkflow({
+    kind: "goal",
+    objective: "long task",
+    status: "running",
+    iteration: 9,
+    totalIterations: 29,
+    conversationIndex: 3,
+    autoRolloverEnabled: true,
+    autoRolloverAfterTurns: 10,
+    autoRolloverMaxConversations: 5
+  }, 1000);
+  assert.equal(Rollover.autoRolloverBoundary(base).action, "none");
+  assert.equal(Rollover.autoRolloverBoundary({ ...base, iteration: 10 }).action, "rollover");
+  assert.equal(Rollover.autoRolloverBoundary({ ...base, iteration: 10, conversationIndex: 5 }).action, "cap");
+  assert.equal(Rollover.autoRolloverBoundary({ ...base, iteration: 10, autoRolloverEnabled: false }).action, "none");
 });

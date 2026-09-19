@@ -50,6 +50,7 @@
       phase: "blocked",
       sourcePageId: "",
       targetPageId: "",
+      browserSessionId: "",
       sourceWorkflow: null,
       focus: "",
       tabId: -1,
@@ -76,10 +77,17 @@
     const workflow = Commands.normalizeWorkflow(raw);
     if (workflow.status === "idle" || !workflow.kind || !workflow.objective) return null;
     return {
+      id: workflow.id,
       kind: workflow.kind,
       objective: clean(workflow.objective, Commands.MAX_OBJECTIVE_LENGTH),
       maxIterations: workflow.maxIterations,
       iteration: workflow.iteration,
+      taskId: workflow.taskId,
+      conversationIndex: workflow.conversationIndex,
+      totalIterations: workflow.totalIterations,
+      autoRolloverEnabled: workflow.autoRolloverEnabled,
+      autoRolloverAfterTurns: workflow.autoRolloverAfterTurns,
+      autoRolloverMaxConversations: workflow.autoRolloverMaxConversations,
       status: workflow.status
     };
   }
@@ -96,6 +104,7 @@
       phase,
       sourcePageId: clean(raw.sourcePageId, 1_000),
       targetPageId: clean(raw.targetPageId, 1_000),
+      browserSessionId: clean(raw.browserSessionId, 180),
       sourceWorkflow: workflowSnapshot(raw.sourceWorkflow),
       focus: clean(raw.focus, MAX_FOCUS_LENGTH),
       tabId: Math.round(finite(raw.tabId, -1)),
@@ -176,7 +185,9 @@
     if (!transaction.handoff) return "";
     const workflow = transaction.sourceWorkflow;
     const markerInstruction = workflow
-      ? "At the very end of your response, emit exactly one marker on its own line: [YOLO:CONTINUE] if more work remains, [YOLO:DONE] only when the objective is genuinely complete, or [YOLO:BLOCKED] only when specific user input or unavailable access is required."
+      ? workflow.autoRolloverEnabled
+        ? "At the very end of your response, emit exactly one marker on its own line: [YOLO:CONTINUE] if more work remains, [YOLO:DONE] only when the objective is genuinely complete, [YOLO:BLOCKED] only when specific user input or unavailable access is required, or [YOLO:ROLLOVER] only when this new conversation itself should be handed off early because its context becomes too long or unreliable."
+        : "At the very end of your response, emit exactly one marker on its own line: [YOLO:CONTINUE] if more work remains, [YOLO:DONE] only when the objective is genuinely complete, or [YOLO:BLOCKED] only when specific user input or unavailable access is required."
       : "Continue the unfinished work directly; do not merely restate the handoff.";
     return [
       "You are continuing a long-running task from a previous ChatGPT conversation.",
@@ -187,7 +198,27 @@
     ].join("\n\n");
   }
 
-  function createTransaction({ sourcePageId = "", sourceWorkflow = null, focus = "", tabId = -1, ownerId = "", baselineAssistantFingerprint = "" } = {}, at = Date.now()) {
+  function autoRolloverBoundary(rawWorkflow) {
+    const workflow = Commands.normalizeWorkflow(rawWorkflow);
+    if (workflow.status === "idle" || !workflow.autoRolloverEnabled) {
+      return { action: "none", reason: "Automatic rollover is disabled" };
+    }
+    if (workflow.iteration < workflow.autoRolloverAfterTurns) {
+      return { action: "none", reason: "Current conversation is below the rollover turn threshold" };
+    }
+    if (workflow.conversationIndex >= workflow.autoRolloverMaxConversations) {
+      return {
+        action: "cap",
+        reason: `Reached the ${workflow.autoRolloverMaxConversations}-conversation rollover safety limit`
+      };
+    }
+    return {
+      action: "rollover",
+      reason: `Reached ${workflow.autoRolloverAfterTurns} completed workflow turns in chat ${workflow.conversationIndex}`
+    };
+  }
+
+  function createTransaction({ sourcePageId = "", sourceWorkflow = null, focus = "", tabId = -1, ownerId = "", browserSessionId = "", baselineAssistantFingerprint = "" } = {}, at = Date.now()) {
     const prompt = handoffPrompt({ focus, sourceWorkflow });
     return normalizeTransaction({
       ...freshTransaction(at),
@@ -198,6 +229,7 @@
       focus,
       tabId,
       ownerId,
+      browserSessionId,
       handoffPrompt: prompt,
       handoffPromptFingerprint: Commands.fingerprint(prompt),
       baselineAssistantFingerprint,
@@ -256,6 +288,7 @@
     handoffPrompt,
     extractHandoff,
     bootstrapPrompt,
+    autoRolloverBoundary,
     createTransaction,
     withRevision,
     acceptHandoff

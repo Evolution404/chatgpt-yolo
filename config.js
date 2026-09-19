@@ -96,6 +96,9 @@
     loadGraceSec: 10,
     scanIntervalSec: 3,
     protectActiveWorkflowTabs: true,
+    autoRolloverEnabled: false,
+    autoRolloverAfterTurns: 12,
+    autoRolloverMaxConversations: 10,
     maxActionsPerSession: 100,
     pauseOnComposerText: true
   });
@@ -199,6 +202,9 @@
     loadGraceSec: { type: "number", min: 0, max: 600, integer: false },
     scanIntervalSec: { type: "number", min: 1, max: 60, integer: false },
     protectActiveWorkflowTabs: { type: "boolean" },
+    autoRolloverEnabled: { type: "boolean" },
+    autoRolloverAfterTurns: { type: "number", min: 2, max: 40, integer: true },
+    autoRolloverMaxConversations: { type: "number", min: 2, max: 25, integer: true },
     maxActionsPerSession: { type: "number", min: 0, max: 10000, integer: true },
     pauseOnComposerText: { type: "boolean" }
   });

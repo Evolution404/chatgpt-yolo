@@ -8,12 +8,16 @@ test("normalizes and clamps settings with interval invariants", () => {
     queueIntervalMaxSec: 2,
     approvalDelayMinSec: -10,
     scanIntervalSec: 500,
+    autoRolloverAfterTurns: 1,
+    autoRolloverMaxConversations: 99,
     queueMaxRetries: "2.6"
   });
   assert.equal(settings.queueIntervalMinSec, 50);
   assert.equal(settings.queueIntervalMaxSec, 50);
   assert.equal(settings.approvalDelayMinSec, 0);
   assert.equal(settings.scanIntervalSec, 60);
+  assert.equal(settings.autoRolloverAfterTurns, 2);
+  assert.equal(settings.autoRolloverMaxConversations, 25);
   assert.equal(settings.queueMaxRetries, 3);
 });
 

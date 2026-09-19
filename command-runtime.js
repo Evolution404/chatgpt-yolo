@@ -47,8 +47,38 @@
     return response;
   }
 
+  function rolloverIdFromLocation() {
+    try {
+      return String(new URL(location.href).searchParams.get("yolo-rollover") || "").trim().slice(0, 180);
+    } catch {
+      return "";
+    }
+  }
+
+  function rolloverNewChatUrl(transaction) {
+    const url = new URL(`${location.origin}/`);
+    url.searchParams.set("yolo-rollover", transaction.id);
+    return url.toString();
+  }
+
+  function clearRolloverTokenFromLocation() {
+    try {
+      const url = new URL(location.href);
+      if (!url.searchParams.has("yolo-rollover")) return;
+      url.searchParams.delete("yolo-rollover");
+      history.replaceState(history.state, "", url.toString());
+    } catch {
+      // URL cleanup is best-effort and never affects persisted rollover state.
+    }
+  }
+
   async function readRollover() {
-    const response = applyRolloverResponse(await backgroundSend({ type: "YOLO_ROLLOVER_GET" }));
+    const response = applyRolloverResponse(await backgroundSend({
+      type: "YOLO_ROLLOVER_GET",
+      ownerId: state.ownerId,
+      pageId: Config.pageId(location.href),
+      rolloverId: rolloverIdFromLocation()
+    }));
     state.rolloverLoaded = true;
     return response?.ok ? state.rollover : null;
   }
@@ -262,9 +292,15 @@
       if (!cancelled.ok) return { ok: false, reason: cancelled.reason, keepOpen: true };
     }
 
+    const settings = engine()?.getState?.().settings || Config.DEFAULT_SETTINGS;
     const current = Commands.startWorkflow(kind, args, {
       at: now(),
-      baselineFingerprint: latestAssistantFingerprint()
+      baselineFingerprint: latestAssistantFingerprint(),
+      rolloverPolicy: {
+        enabled: settings.autoRolloverEnabled,
+        afterTurns: settings.autoRolloverAfterTurns,
+        maxConversations: settings.autoRolloverMaxConversations
+      }
     });
     if (!current.ok) return { ...current, keepOpen: true };
     current.workflow.revision = latest.revision;
@@ -330,6 +366,8 @@
       Rollover: state.rollover ? state.rollover.phase : "None",
       Objective: workflow.status === "idle" ? "—" : workflow.objective,
       Iteration: workflow.status === "idle" ? "—" : `${workflow.iteration}/${workflow.maxIterations}`,
+      Task: workflow.status === "idle" ? "—" : `chat ${workflow.conversationIndex}/${workflow.autoRolloverMaxConversations} · ${workflow.totalIterations} total turns`,
+      "Auto rollover": workflow.status === "idle" ? "—" : (workflow.autoRolloverEnabled ? `after ${workflow.autoRolloverAfterTurns} turns` : "Off"),
       Queue: queue?.ok ? `${queue.state.items.length} item${queue.state.items.length === 1 ? "" : "s"}${queue.state.paused ? " · paused" : ""}` : "Unavailable",
       Runner: workflow.status === "running" ? (workflow.runnerId === state.ownerId ? "This tab" : (workflow.runnerId ? "Another tab" : "Acquiring")) : "—",
       Generation: apiState.generating ? "Active" : "Idle",
@@ -370,6 +408,54 @@
     const sent = await api?.runAction?.("queue-next");
     await record(sent ? "Started rollover handoff" : "Queued rollover handoff", "success", "command.rollover.started");
     return { ok: true };
+  }
+
+  async function startAutomaticRollover(workflow, reason) {
+    const current = Commands.normalizeWorkflow(workflow);
+    if (!current.autoRolloverEnabled) return false;
+    if (current.conversationIndex >= current.autoRolloverMaxConversations) {
+      state.workflow = current;
+      await markWorkflow(
+        "paused",
+        `Reached the ${current.autoRolloverMaxConversations}-conversation rollover safety limit`,
+        "command.workflow.rollover_cap"
+      );
+      return true;
+    }
+
+    await ensureRolloverLoaded();
+    if (state.rollover && !["bound"].includes(state.rollover.phase)) {
+      state.workflow = current;
+      await markWorkflow("blocked", `Cannot start automatic rollover while rollover is ${state.rollover.phase}`, "command.workflow.rollover_conflict");
+      return true;
+    }
+
+    const response = applyRolloverResponse(await backgroundSend({
+      type: "YOLO_ROLLOVER_START",
+      pageId: state.pageId,
+      consumeWorkflowResponse: true,
+      workflowExpectedRevision: current.revision,
+      sourceWorkflow: current,
+      focus: reason,
+      ownerId: state.ownerId,
+      baselineAssistantFingerprint: current.lastAssistantFingerprint || latestAssistantFingerprint()
+    }));
+    if (!response?.ok) {
+      state.workflow = await readWorkflow(state.pageId);
+      syncUI();
+      await record(`Automatic rollover did not start: ${response?.reason || "state changed"}`, "warning", response?.code || "command.workflow.rollover_start_failed");
+      return true;
+    }
+
+    if (response.workflow) state.workflow = Commands.normalizeWorkflow(response.workflow);
+    syncUI();
+    const sent = await engine()?.runAction?.("queue-next");
+    await record(
+      sent ? `Started automatic rollover from chat ${current.conversationIndex}` : `Queued automatic rollover from chat ${current.conversationIndex}`,
+      "success",
+      "command.workflow.rollover_started"
+    );
+    return true;
   }
 
   async function handleRolloverHandoffQueue(transaction, apiState) {
@@ -432,7 +518,7 @@
     }
     if (!await writeRollover(accepted.transaction)) return false;
     await record("Captured rollover handoff; opening a new chat", "success", "rollover.handoff_captured");
-    location.assign(`${location.origin}/`);
+    location.assign(rolloverNewChatUrl(state.rollover));
     return true;
   }
 
@@ -440,7 +526,9 @@
     if (!Config.isDurablePageId(state.pageId) || state.pageId !== transaction.targetPageId) return false;
     const source = transaction.sourceWorkflow;
     if (!source || source.status === "completed") {
-      return writeRollover(Rollover.normalizeTransaction({ ...transaction, phase: "bound", reason: "Successor conversation bound", updatedAt: now() }));
+      const bound = await writeRollover(Rollover.normalizeTransaction({ ...transaction, phase: "bound", reason: "Successor conversation bound", updatedAt: now() }));
+      if (bound) clearRolloverTokenFromLocation();
+      return bound;
     }
 
     const current = await readWorkflow(state.pageId);
@@ -451,7 +539,9 @@
       if (alreadyAdopted) {
         state.workflow = current;
         syncUI();
-        return writeRollover(Rollover.normalizeTransaction({ ...transaction, phase: "bound", reason: "Successor workflow already adopted", updatedAt: now() }));
+        const bound = await writeRollover(Rollover.normalizeTransaction({ ...transaction, phase: "bound", reason: "Successor workflow already adopted", updatedAt: now() }));
+        if (bound) clearRolloverTokenFromLocation();
+        return bound;
       }
       await blockRollover("The successor conversation already contains a different YOLO workflow", "rollover.target_workflow_conflict");
       return true;
@@ -460,7 +550,12 @@
     const args = source.kind === "loop" ? `${source.maxIterations} ${source.objective}` : source.objective;
     const started = Commands.startWorkflow(source.kind, args, {
       at: now(),
-      baselineFingerprint: latestAssistantFingerprint()
+      baselineFingerprint: latestAssistantFingerprint(),
+      rolloverPolicy: {
+        enabled: source.autoRolloverEnabled,
+        afterTurns: source.autoRolloverAfterTurns,
+        maxConversations: source.autoRolloverMaxConversations
+      }
     });
     if (!started.ok) {
       await blockRollover(started.reason || "Could not restore the workflow in the successor conversation", "rollover.workflow_restore_failed");
@@ -469,6 +564,12 @@
     const workflow = Commands.normalizeWorkflow({
       ...started.workflow,
       iteration: 0,
+      taskId: source.taskId,
+      conversationIndex: source.conversationIndex + 1,
+      totalIterations: source.totalIterations,
+      autoRolloverEnabled: source.autoRolloverEnabled,
+      autoRolloverAfterTurns: source.autoRolloverAfterTurns,
+      autoRolloverMaxConversations: source.autoRolloverMaxConversations,
       pendingItemId: "",
       awaitingResponse: true,
       sawGeneration: Boolean(engine()?.getState?.().generating),
@@ -485,7 +586,9 @@
       await blockRollover("Could not persist the restored workflow in the successor conversation", "rollover.workflow_restore_conflict");
       return true;
     }
-    return writeRollover(Rollover.normalizeTransaction({ ...state.rollover, phase: "bound", reason: "Successor conversation and workflow bound", updatedAt: now() }));
+    const bound = await writeRollover(Rollover.normalizeTransaction({ ...state.rollover, phase: "bound", reason: "Successor conversation and workflow bound", updatedAt: now() }));
+    if (bound) clearRolloverTokenFromLocation();
+    return bound;
   }
 
   async function handleRolloverBootstrap(transaction) {
@@ -559,7 +662,7 @@
       if (transaction.phase === "handoff_queued") return handleRolloverHandoffQueue(transaction, apiState);
       if (transaction.phase === "awaiting_handoff") return handleRolloverHandoffResponse(transaction, apiState);
       if (transaction.phase === "bootstrap_pending") {
-        location.assign(`${location.origin}/`);
+        location.assign(rolloverNewChatUrl(transaction));
         return true;
       }
       if (["bootstrap_submitting", "bootstrap_sent"].includes(transaction.phase)) {
@@ -644,9 +747,21 @@
     });
     state.workflow = decision.workflow;
     if (decision.action === "ignore") return false;
+    if (decision.action === "rollover") {
+      return startAutomaticRollover(state.workflow, decision.reason);
+    }
     if (decision.action !== "continue") {
       await markWorkflow(decision.action, decision.reason, decision.code);
       return true;
+    }
+
+    const rolloverBoundary = Rollover.autoRolloverBoundary(state.workflow);
+    if (rolloverBoundary.action === "cap") {
+      await markWorkflow("paused", rolloverBoundary.reason, "command.workflow.rollover_cap");
+      return true;
+    }
+    if (rolloverBoundary.action === "rollover") {
+      return startAutomaticRollover(state.workflow, rolloverBoundary.reason);
     }
 
     const prompt = Commands.workflowPrompt(state.workflow, "continue");
