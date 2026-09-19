@@ -50,7 +50,7 @@ function loadBackground() {
   };
   context.globalThis = context;
   vm.createContext(context);
-  for (const file of ["config.js", "shared.js", "coordinator.js", "portable-store.js", "queue.js", "commands.js", "background.js"]) {
+  for (const file of ["config.js", "shared.js", "coordinator.js", "portable-store.js", "queue.js", "commands.js", "rollover.js", "background.js"]) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), context, { filename: file });
   }
   const invoke = (message, sender = {}) => new Promise((resolve) => {
@@ -59,6 +59,78 @@ function loadBackground() {
   });
   return { invoke, storage, failStorageWrite() { failNextSet = true; } };
 }
+
+test("rollover start atomically persists a tab-bound transaction and its handoff queue item", async () => {
+  const { invoke, storage } = loadBackground();
+  const pageId = "https://chatgpt.com/c/rollover-source";
+  const sender = { tab: { id: 41, url: pageId } };
+  const started = await invoke({
+    type: "YOLO_ROLLOVER_START",
+    pageId,
+    focus: "preserve exact repository state",
+    ownerId: "runner-a",
+    baselineAssistantFingerprint: "assistant-old",
+    sourceWorkflow: {
+      kind: "loop",
+      objective: "finish the audit",
+      status: "paused",
+      maxIterations: 12,
+      iteration: 7
+    }
+  }, sender);
+
+  assert.equal(started.ok, true);
+  assert.equal(started.transaction.tabId, 41);
+  assert.equal(started.transaction.phase, "handoff_queued");
+  assert.equal(started.state.items.length, 1);
+  assert.equal(started.state.items[0].source, "rollover:handoff");
+  assert.equal(started.state.items[0].sourceId, started.transaction.id);
+  assert.equal(storage.yoloQueuesV1[pageId].items[0].id, started.transaction.pendingItemId);
+  assert.equal(storage.yoloRolloversV1["41"].id, started.transaction.id);
+
+  const read = await invoke({ type: "YOLO_ROLLOVER_GET" }, sender);
+  assert.equal(read.ok, true);
+  assert.equal(read.transaction.id, started.transaction.id);
+});
+
+test("rollover state updates use CAS and remain bound to the originating tab", async () => {
+  const { invoke } = loadBackground();
+  const pageId = "https://chatgpt.com/c/rollover-cas";
+  const sender = { tab: { id: 7, url: pageId } };
+  const started = await invoke({ type: "YOLO_ROLLOVER_START", pageId, ownerId: "runner" }, sender);
+  const next = { ...started.transaction, phase: "awaiting_handoff", reason: "Waiting for handoff" };
+
+  const updated = await invoke({
+    type: "YOLO_ROLLOVER_UPDATE",
+    expectedRevision: started.transaction.revision,
+    transaction: next
+  }, sender);
+  assert.equal(updated.ok, true);
+  assert.equal(updated.transaction.phase, "awaiting_handoff");
+
+  const stale = await invoke({
+    type: "YOLO_ROLLOVER_UPDATE",
+    expectedRevision: started.transaction.revision,
+    transaction: next
+  }, sender);
+  assert.equal(stale.ok, false);
+  assert.equal(stale.code, "rollover.conflict");
+
+  const otherTab = await invoke({ type: "YOLO_ROLLOVER_GET" }, { tab: { id: 8, url: pageId } });
+  assert.equal(otherTab.ok, true);
+  assert.equal(otherTab.transaction, null);
+});
+
+test("rollover start does not persist half a transaction when the atomic storage write fails", async () => {
+  const { invoke, storage, failStorageWrite } = loadBackground();
+  const pageId = "https://chatgpt.com/c/rollover-storage-failure";
+  failStorageWrite();
+  const response = await invoke({ type: "YOLO_ROLLOVER_START", pageId }, { tab: { id: 52, url: pageId } });
+  assert.equal(response.ok, false);
+  assert.match(response.reason, /quota exceeded/i);
+  assert.equal(storage.yoloRolloversV1, undefined);
+  assert.equal(storage.yoloQueuesV1, undefined);
+});
 
 test("background serializes queue mutations and claim lifecycle", async () => {
   const { invoke } = loadBackground();

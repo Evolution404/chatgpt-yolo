@@ -1,6 +1,6 @@
 "use strict";
 
-importScripts("config.js", "shared.js", "coordinator.js", "portable-store.js", "queue.js", "commands.js");
+importScripts("config.js", "shared.js", "coordinator.js", "portable-store.js", "queue.js", "commands.js", "rollover.js");
 
 const Config = globalThis.YOLOConfig;
 const Shared = globalThis.YOLOShared;
@@ -8,15 +8,18 @@ const Coordinator = globalThis.YOLOCoordinator;
 const PortableStore = globalThis.YOLOPortableStore;
 const Queue = globalThis.YOLOQueue;
 const Commands = globalThis.YOLOCommands;
+const Rollover = globalThis.YOLORollover;
 const queueLock = Shared.createLock();
 const workflowLock = Shared.createLock();
 const actionLock = Shared.createLock();
+const rolloverLock = Shared.createLock();
 const MAX_CONVERSATION_QUEUES = 25;
 const MAX_ACTIVE_WORKFLOWS = 25;
 const MAX_RETAINED_COMPLETED_WORKFLOWS = 100;
 const ACTIVE_WORKFLOW_STATUSES = new Set(["running", "paused", "blocked"]);
 const WORKFLOW_LEASE_MS = 2 * 60 * 1000;
 const WORKFLOW_RENEW_WINDOW_MS = 30 * 1000;
+const MAX_ACTIVE_ROLLOVERS = 25;
 
 const storageGet = Shared.storageGet;
 const storageSet = Shared.storageSet;
@@ -79,6 +82,126 @@ function senderMatchesPageId(sender, pageId) {
   if (!sender?.tab?.url) return true;
   if (!Config.isSupportedUrl(sender.tab.url)) return false;
   return Config.pageId(sender.tab.url) === pageId;
+}
+
+function senderTabId(sender) {
+  const value = Number(sender?.tab?.id);
+  return Number.isInteger(value) && value >= 0 ? value : -1;
+}
+
+async function readRolloverMap() {
+  const stored = await storageGet([Config.STORAGE_KEYS.rollovers]);
+  const raw = stored[Config.STORAGE_KEYS.rollovers];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(Object.entries(raw).map(([key, value]) => [key, Rollover.normalizeTransaction(value)]));
+}
+
+async function handleRolloverMessage(message, sender) {
+  const tabId = senderTabId(sender);
+  if (tabId < 0) return { ok: false, reason: "A browser tab is required for rollover", code: "rollover.tab_invalid" };
+  const tabKey = String(tabId);
+
+  if (message.type === "YOLO_ROLLOVER_START") {
+    const pageId = message.pageId;
+    if (!validPageId(pageId)) return { ok: false, reason: "A saved ChatGPT conversation is required", code: "rollover.page_invalid" };
+    if (!senderMatchesPageId(sender, pageId)) {
+      return { ok: false, reason: "Conversation identifier does not match the sending tab", code: "rollover.page_mismatch" };
+    }
+
+    return withLock(rolloverLock, () => withLock(queueLock, async () => {
+      const rollovers = await readRolloverMap();
+      const existing = rollovers[tabKey];
+      if (existing && existing.phase !== "bound") {
+        return {
+          ok: false,
+          reason: existing.phase === "blocked"
+            ? "The previous rollover is blocked and must be cleared before starting another"
+            : "A rollover is already active in this tab",
+          code: existing.phase === "blocked" ? "rollover.blocked" : "rollover.active",
+          transaction: existing
+        };
+      }
+      const activeCount = Object.values(rollovers).filter((entry) => entry.phase !== "bound").length;
+      if (!existing && activeCount >= MAX_ACTIVE_ROLLOVERS) {
+        return { ok: false, reason: `Active rollover limit of ${MAX_ACTIVE_ROLLOVERS} tabs reached`, code: "rollover.capacity" };
+      }
+
+      let transaction = Rollover.createTransaction({
+        sourcePageId: pageId,
+        sourceWorkflow: message.sourceWorkflow,
+        focus: message.focus,
+        tabId,
+        ownerId: message.ownerId,
+        baselineAssistantFingerprint: message.baselineAssistantFingerprint
+      });
+      const queueMap = await readQueueMap();
+      const queueCurrent = Queue.normalizeState(queueMap[pageId]);
+      const queueResult = Queue.addItem(queueCurrent, {
+        text: transaction.handoffPrompt,
+        source: "rollover:handoff",
+        sourceId: transaction.id
+      }, { front: true });
+      if (!queueResult.ok) return { ...queueResult, transaction };
+      const capacityError = ensureQueueCapacity(queueMap, pageId, queueCurrent);
+      if (capacityError) return { ...capacityError, transaction };
+
+      transaction = Rollover.withRevision(transaction, {
+        pendingItemId: queueResult.item.id,
+        reason: "Handoff prompt queued"
+      });
+      delete queueMap[pageId];
+      queueMap[pageId] = queueResult.state;
+      delete rollovers[tabKey];
+      rollovers[tabKey] = transaction;
+      await storageSet({
+        [Config.STORAGE_KEYS.queues]: queueMap,
+        [Config.STORAGE_KEYS.rollovers]: rollovers
+      });
+      return {
+        ok: true,
+        transaction,
+        item: queueResult.item,
+        state: queueResult.state,
+        summary: Queue.summary(queueResult.state)
+      };
+    }));
+  }
+
+  return withLock(rolloverLock, async () => {
+    const rollovers = await readRolloverMap();
+    const current = rollovers[tabKey] || null;
+    if (message.type === "YOLO_ROLLOVER_GET") return { ok: true, transaction: current };
+    if (!current) return { ok: false, reason: "No rollover is active in this tab", code: "rollover.not_found" };
+
+    if (message.type === "YOLO_ROLLOVER_UPDATE") {
+      const expectedRevision = Math.max(0, Math.round(Number(message.expectedRevision) || 0));
+      if (expectedRevision !== current.revision) {
+        return { ok: false, reason: "Rollover changed in another context", code: "rollover.conflict", transaction: current };
+      }
+      const requested = Rollover.normalizeTransaction(message.transaction);
+      if (requested.id !== current.id || requested.sourcePageId !== current.sourcePageId || requested.tabId !== tabId) {
+        return { ok: false, reason: "Rollover identity cannot be changed", code: "rollover.identity_mismatch", transaction: current };
+      }
+      if (requested.targetPageId) {
+        if (!validPageId(requested.targetPageId) || !senderMatchesPageId(sender, requested.targetPageId)) {
+          return { ok: false, reason: "Target conversation does not match the sending tab", code: "rollover.target_mismatch", transaction: current };
+        }
+      }
+      const transaction = Rollover.normalizeTransaction({ ...requested, revision: current.revision + 1, updatedAt: Date.now() });
+      rollovers[tabKey] = transaction;
+      await storageSet({ [Config.STORAGE_KEYS.rollovers]: rollovers });
+      return { ok: true, transaction };
+    }
+
+    if (message.type === "YOLO_ROLLOVER_CLEAR") {
+      delete rollovers[tabKey];
+      if (Object.keys(rollovers).length) await storageSet({ [Config.STORAGE_KEYS.rollovers]: rollovers });
+      else await storageRemove([Config.STORAGE_KEYS.rollovers]);
+      return { ok: true, transaction: null };
+    }
+
+    return { ok: false, reason: "Unknown rollover operation", code: "rollover.unknown" };
+  });
 }
 
 async function mutateActionGuards(mutator) {
@@ -489,6 +612,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message?.type?.startsWith("YOLO_")) return false;
   const task = message.type.startsWith("YOLO_ACTION_")
     ? handleActionMessage(message, sender)
+    : message.type.startsWith("YOLO_ROLLOVER_")
+      ? handleRolloverMessage(message, sender)
     : message.type.includes("TEMPLATE")
       ? handleTemplateMessage(message)
       : message.type.includes("WORKFLOW")
