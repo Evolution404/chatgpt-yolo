@@ -53,6 +53,7 @@
         "platforms.js",
         "shared.js",
         "commands.js",
+        "rollover.js",
         "command-ui.js",
         "content-state.js",
         "content.js",

@@ -22,6 +22,7 @@
     Object.freeze({ name: "fix", title: "Fix", description: "Queue a prompt asking ChatGPT to diagnose, repair, and validate work.", args: "[scope]", group: "Prompt shortcuts", kind: "prompt" }),
     Object.freeze({ name: "handoff", title: "Handoff", description: "Ask ChatGPT to write a continuation brief; this does not compact ChatGPT context.", args: "[focus]", group: "Prompt shortcuts", kind: "prompt" }),
     Object.freeze({ name: "continue", title: "Continue", description: "Queue a prompt to continue the current task, optionally with a direction.", args: "[direction]", group: "Prompt shortcuts", kind: "prompt" }),
+    Object.freeze({ name: "rollover", title: "Rollover", description: "Create a strict handoff, start a new chat, and continue the current work there.", args: "[focus]", group: "Automated workflows", kind: "control" }),
     Object.freeze({ name: "status", title: "Status", description: "Show YOLO workflow, queue, generation, limits, and last-action state.", args: "", group: "YOLO controls", kind: "control" }),
     Object.freeze({ name: "pause", title: "Pause", description: "Pause the active YOLO goal or loop without deleting it.", args: "", group: "YOLO controls", kind: "control" }),
     Object.freeze({ name: "resume", title: "Resume", description: "Resume the active paused or blocked YOLO workflow.", args: "", group: "YOLO controls", kind: "control" }),

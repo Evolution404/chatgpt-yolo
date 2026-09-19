@@ -16,6 +16,7 @@
     queues: "yoloQueuesV1",
     templates: "yoloTemplatesV1",
     actionGuards: "yoloActionGuardsV1",
+    rollovers: "yoloRolloversV1",
     portableRevision: "yoloPortableRevisionV1"
   });
 

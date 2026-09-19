@@ -15,6 +15,7 @@ test("filters and parses the truthful slash-action catalog", () => {
   assert.deepEqual(Commands.COMMANDS.map(({ name, kind }) => [name, kind]), [
     ["goal", "workflow"], ["loop", "workflow"],
     ["plan", "prompt"], ["review", "prompt"], ["fix", "prompt"], ["handoff", "prompt"], ["continue", "prompt"],
+    ["rollover", "control"],
     ["status", "control"], ["pause", "control"], ["resume", "control"], ["stop", "control"], ["settings", "control"], ["help", "control"]
   ]);
 });
