@@ -2,6 +2,18 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const Commands = require("../commands.js");
 
+test("browser bootstrap fails closed when shared dependency is missing", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const vm = require("node:vm");
+  const source = fs.readFileSync(path.join(__dirname, "..", "commands.js"), "utf8");
+  const context = { globalThis: undefined };
+  context.globalThis = context;
+  vm.createContext(context);
+  assert.doesNotThrow(() => vm.runInContext(source, context, { filename: "commands.js" }));
+  assert.equal(context.YOLOCommands, undefined);
+});
+
 test("filters and parses the truthful slash-action catalog", () => {
   assert.equal(Commands.filterCommands("rev")[0].name, "review");
   assert.equal(Commands.parseInvocation("/goal ship the extension").command.name, "goal");

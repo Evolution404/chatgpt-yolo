@@ -105,7 +105,7 @@ Fault-injection coverage must include refresh/restart at every transaction phase
 Current validation on 2026-09-19:
 
 - rollover/config/runtime/UI targeted suite: 93/93 pass;
-- full repository suite: 303/303 pass;
+- full repository suite: 305/305 pass;
 - `npm run validate:core` passes end-to-end;
 - `npm run check` passes;
 - `npm run verify:extension` passes and confirms the public extension boundary;

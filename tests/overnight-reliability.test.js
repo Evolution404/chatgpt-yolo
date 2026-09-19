@@ -16,6 +16,17 @@ test("the tab supervisor is alarm-driven, staggered, and never force reloads or 
   assert.doesNotMatch(source, /tabs\.reload|location\.reload|tabs\.discard|active: true/);
 });
 
+test("tab supervisor reinjection uses the exact manifest content-script stack and order", () => {
+  const supervisor = read("tab-supervisor.js");
+  const manifest = JSON.parse(read("manifest.json"));
+  const match = supervisor.match(/const SCRIPT_FILES = Object\.freeze\(\[([\s\S]*?)\]\);/);
+  assert.ok(match, "tab-supervisor SCRIPT_FILES must be statically inspectable");
+  const injected = JSON.parse(`[${match[1]}]`);
+  assert.deepEqual(injected, manifest.content_scripts[0].js);
+  assert.ok(injected.indexOf("shared.js") < injected.indexOf("commands.js"));
+  assert.ok(injected.indexOf("commands.js") < injected.indexOf("rollover.js"));
+});
+
 test("active workflow protection is explicit and returns idle tabs to Memory Saver", () => {
   const source = read("tab-supervisor.js");
   assert.match(source, /protectActiveWorkflowTabs/);

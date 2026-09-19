@@ -1,5 +1,6 @@
 ((root, factory) => {
   const Shared = typeof module === "object" && module.exports ? require("./shared.js") : root.YOLOShared;
+  if (!Shared || typeof Shared.makeId !== "function") return;
   const api = factory(Shared);
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.YOLOCommands = api;

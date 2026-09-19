@@ -9,6 +9,7 @@ All notable changes are documented here.
 - Added browser-restart recovery for rollover transactions using a browser-session epoch and opaque transient-route recovery token while preserving fail-closed behavior.
 - Added Advanced settings and `/status` visibility for automatic rollover policy and task-level counters.
 - Added a stuck-generation watchdog: assistant output progress tracking, soft-stall warning, hard-stall Stop recovery, bounded refresh fallback, and workflow-aware continuation that never replays the interrupted user prompt.
+- Fixed tab-supervisor recovery injection to load the exact manifest content-script stack, including `shared.js` before `commands.js` and `rollover.js` before command runtime; `commands.js` now also fails closed if its shared dependency is unavailable.
 - Fixed macOS asset-validator test fixtures to use canonical temporary roots without relaxing production path-safety checks.
 
 - Reaffirmed YOLO as a browser-only ChatGPT extension and documented the product boundary, non-goals, roadmap, and success measures.
