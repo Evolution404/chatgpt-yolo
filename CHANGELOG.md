@@ -4,6 +4,12 @@ All notable changes are documented here.
 
 ## Unreleased
 
+- Added durable `/rollover` handoff into a fresh ChatGPT conversation with strict envelope validation, exact bootstrap receipt, and successor binding.
+- Added opt-in automatic rollover for newly started Goal/Loop workflows with chat-local turn thresholds, task-wide turn accounting, explicit conversation caps, and `[YOLO:ROLLOVER]`.
+- Added browser-restart recovery for rollover transactions using a browser-session epoch and opaque transient-route recovery token while preserving fail-closed behavior.
+- Added Advanced settings and `/status` visibility for automatic rollover policy and task-level counters.
+- Fixed macOS asset-validator test fixtures to use canonical temporary roots without relaxing production path-safety checks.
+
 - Reaffirmed YOLO as a browser-only ChatGPT extension and documented the product boundary, non-goals, roadmap, and success measures.
 - Rebuilt README information architecture with a clearer hook, primary actions, GitHub-to-ChatGPT setup guidance, and sponsorship presentation.
 - Added launch visual assets, video storyboard, and distribution copy under `marketing/` and `docs/assets/`.

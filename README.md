@@ -6,8 +6,10 @@ A local-first Chromium extension that adds persistent instruction queues, compos
 
 > **Independent project:** YOLO is not affiliated with or endorsed by OpenAI. It does not use the OpenAI API, run a backend, inject remote code, or collect telemetry.
 
-[![CI](https://github.com/kartikkabadi/chatgpt-yolo/actions/workflows/ci.yml/badge.svg)](https://github.com/kartikkabadi/chatgpt-yolo/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/kartikkabadi/chatgpt-yolo/actions/workflows/codeql.yml/badge.svg)](https://github.com/kartikkabadi/chatgpt-yolo/actions/workflows/codeql.yml)
+This fork builds on the original `kartikkabadi/chatgpt-yolo` project and adds durable cross-conversation rollover for long-running tasks.
+
+[![CI](https://github.com/Evolution404/chatgpt-yolo/actions/workflows/ci.yml/badge.svg)](https://github.com/Evolution404/chatgpt-yolo/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Evolution404/chatgpt-yolo/actions/workflows/codeql.yml/badge.svg)](https://github.com/Evolution404/chatgpt-yolo/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-informational.svg)](manifest.json)
 
@@ -51,6 +53,9 @@ The extension runs entirely in your browser. YOLO's settings, queues, templates,
 - Per-conversation persistent queues with drag ordering, editing, retry, pause, send-next, and fail-closed delivery recovery.
 - `/goal <objective>` for marker-driven persistent objectives.
 - `/loop [iterations] <objective>` for bounded iterative work; defaults to 12 and is hard-capped at 50 turns.
+- `/rollover [focus]` for a strict machine-readable handoff into a fresh ChatGPT conversation.
+- Optional automatic rollover for newly started Goal/Loop workflows after a bounded number of chat-local turns, with a task-wide conversation cap.
+- Browser-restart recovery for in-flight rollover transactions without weakening the existing fail-closed send model.
 - `/plan`, `/review`, `/fix`, `/handoff`, and `/continue` prompt shortcuts.
 - `/status`, `/pause`, `/resume`, `/stop`, `/settings`, and `/help` extension controls.
 - Command palette from `/` in an empty composer or `Cmd/Ctrl + Shift + P`.
@@ -138,7 +143,7 @@ A 44.5-second walkthrough of queuing the next steps and running a bounded workfl
 
 ### From a release archive (recommended)
 
-Download the latest `yolo-v1.1.0.zip` from the [Releases](https://github.com/kartikkabadi/chatgpt-yolo/releases) page, unzip it, and load the `yolo` folder as an unpacked extension:
+Download the latest `yolo-v1.2.0.zip` from the [Releases](https://github.com/Evolution404/chatgpt-yolo/releases) page when available, unzip it, and load the `yolo` folder as an unpacked extension:
 
 1. Open `chrome://extensions` in Chrome, Edge, Brave, Arc, or another Chromium browser.
 2. Enable **Developer mode**.
@@ -148,13 +153,13 @@ Download the latest `yolo-v1.1.0.zip` from the [Releases](https://github.com/kar
 Release archives are built and attested by GitHub Actions. You can verify the attestation with:
 
 ```bash
-gh attestation verify yolo-v1.1.0.zip --repo kartikkabadi/chatgpt-yolo
+gh attestation verify yolo-v1.2.0.zip --repo Evolution404/chatgpt-yolo
 ```
 
 ### From source (optional)
 
 ```bash
-git clone https://github.com/kartikkabadi/chatgpt-yolo.git
+git clone https://github.com/Evolution404/chatgpt-yolo.git
 cd chatgpt-yolo
 npm run validate:core
 npm run package
@@ -181,8 +186,8 @@ These are **YOLO extension actions**, not native ChatGPT commands. Automated wor
 
 | Action | Purpose |
 | --- | --- |
-| `/goal <objective>` | Run a bounded persistent objective. Every turn must end with `[YOLO:CONTINUE]`, `[YOLO:DONE]`, or `[YOLO:BLOCKED]`. |
-| `/loop [count] <objective>` | Run bounded iterations. Missing or malformed terminal markers pause the loop instead of guessing. |
+| `/goal <objective>` | Run a bounded persistent objective. New workflows can opt into automatic rollover and the additional `[YOLO:ROLLOVER]` marker. |
+| `/loop [count] <objective>` | Run bounded task-wide iterations. Rollover never resets the requested iteration cap. |
 
 ### Prompt shortcuts
 
@@ -199,6 +204,7 @@ These are **YOLO extension actions**, not native ChatGPT commands. Automated wor
 | Action | Purpose |
 | --- | --- |
 | `/status` | Show workflow, queue, runner, generation, profile, limits, and last action. |
+| `/rollover [focus]` | Generate a strict handoff, open a fresh chat in the same tab, bootstrap it, and bind the successor conversation. |
 | `/pause`, `/resume`, `/stop` | Pause, resume, or stop and clear the active workflow. |
 | `/settings`, `/help` | Open Advanced settings or the action palette. |
 
