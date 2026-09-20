@@ -33,12 +33,11 @@ test("pending workflow recovery reads authoritative state before history fallbac
   assert.match(pendingHandler, /completedExactly/);
 });
 
-test("stuck-generation workflow recovery queues a dedicated continuation instead of replaying the old prompt", () => {
-  const start = source.indexOf("async function recoverStalledGeneration");
+test("exhausted refresh recovery queues a dedicated continuation instead of replaying the old prompt", () => {
+  const start = source.indexOf("async function queueWorkflowRecovery");
   const end = source.indexOf("function schedulePoll", start);
   const handler = source.slice(start, end);
   assert.match(handler, /Commands\.workflowRecoveryPrompt\(workflow/);
-  assert.match(handler, /workflow:\$\{workflow\.kind\}:watchdog/);
   assert.match(handler, /workflow:\$\{workflow\.kind\}:response-recovery/);
   assert.match(handler, /queuePrompt\(prompt/);
   assert.doesNotMatch(handler, /promptFingerprint/);

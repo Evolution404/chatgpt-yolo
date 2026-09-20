@@ -54,10 +54,9 @@ The extension runs entirely in your browser. YOLO's settings, queues, templates,
 - `/goal <objective>` for marker-driven persistent objectives.
 - `/loop [iterations] <objective>` for bounded iterative work; defaults to 12 and is hard-capped at 50 turns.
 - `/rollover [focus]` for a strict machine-readable handoff into a fresh ChatGPT conversation.
-- Optional automatic rollover for newly started Goal/Loop workflows after a bounded number of chat-local turns, with a task-wide conversation cap.
+- Automatic rollover for newly started Goal/Loop workflows after 6 completed chat-local turns by default, with a task-wide conversation cap.
 - Browser-restart recovery for in-flight rollover transactions without weakening the existing fail-closed send model.
-- Stuck-generation watchdog: warns after 5 minutes without assistant progress, requests Stop after 10 minutes, enforces a 30-minute absolute generation cap, and resumes from partial work instead of replaying the original prompt.
-- Response-start watchdog: if a delivered Goal/Loop prompt never starts producing a response, YOLO refreshes once after 3 minutes and then blocks rather than waiting forever.
+- Simple Goal/Loop request recovery: wait up to 27 minutes for a usable final answer, refresh the current conversation up to 3 times with a 15-second reload/check window, then send a dedicated recovery continuation if the answer still cannot be recovered.
 - Frozen-renderer recovery: protected running workflows emit persistent heartbeats; when a ChatGPT renderer becomes unresponsive at a safe response boundary, YOLO can replace the stuck tab with the same durable conversation and let the new runtime adopt the workflow without resending the original prompt.
 - Chinese-first extension UI across popup, Advanced settings, onboarding, command palette, workflow status, queue feedback, templates, diagnostics, and recovery notices.
 - `/plan`, `/review`, `/fix`, `/handoff`, and `/continue` prompt shortcuts.
@@ -190,7 +189,7 @@ These are **YOLO extension actions**, not native ChatGPT commands. Automated wor
 
 | Action | Purpose |
 | --- | --- |
-| `/goal <objective>` | Run a bounded persistent objective. New workflows can opt into automatic rollover and the additional `[YOLO:ROLLOVER]` marker. |
+| `/goal <objective>` | Run a bounded persistent objective. New workflows use automatic rollover by default and support the additional `[YOLO:ROLLOVER]` marker while that policy is enabled. |
 | `/loop [count] <objective>` | Run bounded task-wide iterations. Rollover never resets the requested iteration cap. |
 
 ### Prompt shortcuts

@@ -132,10 +132,6 @@
     return Commands.fingerprint(Platforms.latestAssistantText(adapter()));
   }
 
-  function latestResponseActivityFingerprint() {
-    return Commands.fingerprint(Platforms.latestResponseActivityText(adapter()));
-  }
-
   function latestUserFingerprint() {
     return Commands.fingerprint(Platforms.latestUserText(adapter()));
   }
@@ -199,13 +195,16 @@
     return Boolean(response?.ok && state.pageId === pageId);
   }
 
-  function releaseWorkflow() {
-    if (!state.pageId || state.workflow.runnerId !== state.ownerId) return;
-    backgroundSend({
+  async function releaseWorkflow() {
+    if (!state.pageId || state.workflow.runnerId !== state.ownerId) return false;
+    const pageId = state.pageId;
+    const response = await backgroundSend({
       type: "YOLO_WORKFLOW_RELEASE",
-      pageId: state.pageId,
+      pageId,
       ownerId: state.ownerId
     });
+    applyWorkflowResponse(response, pageId);
+    return Boolean(response?.ok);
   }
 
   async function queueState(pageId = state.pageId) {
@@ -230,9 +229,8 @@
       next.sawGeneration = false;
       next.responseCandidateFingerprint = "";
       next.responseCandidateSince = 0;
-      next.responseActivityFingerprint = latestResponseActivityFingerprint();
-      next.responseActivityAt = 0;
-      next.responseStartRefreshAt = 0;
+      next.recoveryRefreshCount = 0;
+      next.recoveryRefreshAt = 0;
       next.baselineFingerprint = latestAssistantFingerprint();
       next.lastAssistantFingerprint = next.baselineFingerprint;
       next.promptFingerprint = Commands.fingerprint(prompt);
@@ -399,36 +397,31 @@
     if (workflow.status !== "running") return "空闲";
     if (workflow.pendingItemId) return "工作流提示词等待发送";
     if (!workflow.awaitingResponse) return "准备下一步";
+    if (workflow.recoveryRefreshCount > 0) {
+      const maxRefreshes = Number(apiState.settings?.workflowRefreshRetries) || 3;
+      return `正在刷新恢复 ${workflow.recoveryRefreshCount}/${maxRefreshes}`;
+    }
     if (pageError) {
       const errorText = Platforms.normalizedText(pageError).slice(0, 100);
-      if (workflow.responseActivityAt > workflow.lastPromptAt) {
-        return "ChatGPT 显示错误，但页面仍有进展 · " + errorText;
-      }
       return "检测到 ChatGPT 错误 · " + errorText;
     }
-    if (apiState.generating) return "ChatGPT 正在生成";
-    if (workflow.responseCandidateFingerprint) return "正在等待回答稳定";
-    if (workflow.responseActivityAt > workflow.lastPromptAt) return "检测到 ChatGPT 页面进展，等待有效回答";
-    if (workflow.responseStartRefreshAt) return "已刷新一次，等待回答恢复";
-    if (workflow.sawGeneration) return "生成已结束，等待有效回答";
-    return "等待 ChatGPT 开始回答";
+    if (apiState.generating) return "等待 ChatGPT 最终回答";
+    if (workflow.responseCandidateFingerprint) {
+      const outcome = Commands.evaluateResponse(Platforms.latestAssistantText(adapter()));
+      if (outcome === "missing") return "回答不完整，准备刷新页面";
+      return "正在等待回答稳定";
+    }
+    return "等待 ChatGPT 最终回答";
   }
 
-  function buildLiveStatus(queue = null) {
+  function buildLiveStatus() {
     const apiState = engine()?.getState?.() || {};
     const workflow = Commands.normalizeWorkflow(state.workflow);
-    const watchdog = apiState.runtime?.generationWatchdog || {};
     const pageError = Platforms.findErrorState(adapter());
-    const timerWorkflow = pageError ? { ...workflow, responseCandidateFingerprint: "" } : workflow;
     const timestamp = now();
     const timers = Lifecycle.liveCountdowns({
       settings: apiState.settings || {},
-      workflow: timerWorkflow,
-      runtime: apiState.runtime || {},
-      generating: Boolean(apiState.generating),
-      lastGenerationAt: apiState.lastGenerationAt || 0,
-      lastHeartbeatAt: apiState.lastHeartbeatAt || 0,
-      hidden: document.hidden,
+      workflow,
       now: timestamp
     });
 
@@ -440,38 +433,24 @@
         apiState.lastDomActivityAt || 0,
         apiState.lastGenerationAt || 0
       );
-      const dueAt = quietSince + Lifecycle.responseStableMs(outcome);
-      timers.unshift({
+      const dueAt = quietSince + (outcome === "missing" ? Lifecycle.MISSING_MARKER_REFRESH_MS : Lifecycle.responseStableMs(outcome));
+      if (!(outcome === "missing" && workflow.recoveryRefreshCount > 0)) timers.unshift({
         id: "response-stable",
-        label: "回答稳定",
-        phase: outcome === "missing" ? "缺少控制标记" : "检测控制标记",
-        detail: outcome === "missing" ? "缺少控制标记时按安全窗口等待" : "稳定后处理本回合回答",
+        label: outcome === "missing" ? "回答恢复" : "回答稳定",
+        phase: outcome === "missing" ? "回答不完整" : "检测控制标记",
+        detail: outcome === "missing" ? "稳定后刷新页面读取完整回答" : "稳定后处理本回合回答",
         dueAt,
         remainingMs: Math.max(0, dueAt - timestamp)
       });
     }
 
-    const criticalIds = new Set([
-      "response-start",
-      "response-stable",
-      "watchdog-soft",
-      "watchdog-hard",
-      "watchdog-absolute",
-      "watchdog-stop-grace"
-    ]);
+    const criticalIds = new Set(["workflow-timeout", "workflow-recovery", "response-stable"]);
     const futureTimers = timers.filter((timer) => timer.remainingMs > 0);
     const nextTimer = [...futureTimers]
       .filter((timer) => criticalIds.has(timer.id))
       .sort((a, b) => a.dueAt - b.dueAt)[0]
       || [...futureTimers].sort((a, b) => a.dueAt - b.dueAt)[0]
       || null;
-    const watchdogStatus = !apiState.settings?.generationWatchdogEnabled && !watchdog.stopRequestedAt
-      ? "关闭"
-      : watchdog.stopRequestedAt
-        ? (watchdog.stoppedAt ? "正在恢复被中断的回答" : "已请求 Stop")
-        : apiState.generating
-          ? "正在监控"
-          : "待命";
     const workflowStatus = {
       idle: "空闲",
       running: "运行中",
@@ -479,33 +458,28 @@
       completed: "已完成",
       blocked: "已阻塞"
     }[workflow.status] || workflow.status;
-    const profileLabel = {
-      safe: "安全",
-      balanced: "均衡",
-      fast: "快速",
-      custom: "自定义"
-    }[apiState.settings?.profile] || apiState.settings?.profile || "未知";
     const automationEnabled = Boolean(apiState.settings?.enabled);
     const workflowRunning = workflow.status === "running";
+    const refreshMax = Number(apiState.settings?.workflowRefreshRetries) || 3;
+    const effectiveRolloverEnabled = workflow.status === "idle"
+      ? Boolean(apiState.settings?.autoRolloverEnabled)
+      : workflow.autoRolloverEnabled;
+    const rolloverTurns = workflow.status === "idle"
+      ? (Number(apiState.settings?.autoRolloverAfterTurns) || 6)
+      : (Number(workflow.autoRolloverAfterTurns) || 6);
 
     return {
       headline: workflowRunning
-        ? (automationEnabled ? "工作流运行中" : "工作流运行中 · 常规自动化已暂停")
+        ? "工作流运行中"
         : (automationEnabled ? "常规自动化运行中" : "常规自动化已暂停"),
       nextAction: nextTimer ? nextTimer.label + " " + formatCountdown(nextTimer.remainingMs) : "当前无倒计时动作",
       rows: [
-        ["YOLO", "已加载"],
-        ["常规自动化", automationEnabled ? "运行中" : "已暂停"],
-        ["页面", apiState.hydrated ? "已就绪" : "正在加载"],
         ["工作流", workflow.status === "idle" ? "无" : "/" + workflow.kind + " · " + workflowStatus],
         ["当前阶段", workflowPhaseLabel(workflow, apiState, pageError)],
-        ["生成状态", apiState.generating ? "生成中" : "空闲"],
-        ["卡死监控", watchdogStatus],
-        ["标签页保护", apiState.settings?.protectActiveWorkflowTabs ? "已启用 · 心跳失联时恢复" : "关闭"],
-        ["切换对话", rolloverPhaseLabel(state.rollover?.phase)],
         ["回合", workflow.status === "idle" ? "—" : workflow.iteration + "/" + workflow.maxIterations + " · 总计 " + workflow.totalIterations],
-        ["队列", queue?.ok ? queue.state.items.length + " 条" + (queue.state.paused ? " · 已暂停" : "") : "实时状态"],
-        ["模式", profileLabel],
+        ["当前会话", workflow.status === "idle" ? "—" : `第 ${workflow.conversationIndex} 个 · ${workflow.iteration}/${rolloverTurns} 回合`],
+        ["刷新恢复", workflow.status === "idle" ? "—" : `${workflow.recoveryRefreshCount}/${refreshMax}`],
+        ["自动切换", effectiveRolloverEnabled ? `${rolloverTurns} 回合后切换` : "关闭"],
         ["最近操作", apiState.lastAction?.message || "空闲"]
       ],
       timers: timers.map((timer) => ({
@@ -516,8 +490,7 @@
   }
 
   async function showStatus() {
-    const queue = await queueState();
-    state.ui?.showStatus(buildLiveStatus(queue));
+    state.ui?.showStatus(buildLiveStatus());
     return { ok: true, focusComposer: false };
   }
 
@@ -961,6 +934,36 @@
     return true;
   }
 
+  async function refreshWorkflowResponse(workflow, api, reason) {
+    const apiState = api?.getState?.() || {};
+    const maxRefreshes = Math.max(1, Number(apiState.settings?.workflowRefreshRetries) || 3);
+    if (workflow.recoveryRefreshCount >= maxRefreshes) return false;
+
+    const next = Commands.normalizeWorkflow(workflow);
+    const refreshAt = now();
+    next.recoveryRefreshCount += 1;
+    next.recoveryRefreshAt = refreshAt;
+    next.reason = `正在刷新当前会话（${next.recoveryRefreshCount}/${maxRefreshes}）：${reason}`;
+    next.updatedAt = refreshAt;
+    if (!await writeWorkflow(next)) return false;
+    await releaseWorkflow();
+
+    const refreshed = await api.runAction("workflow-recovery-refresh");
+    if (refreshed) return true;
+
+    const latest = await readWorkflow(state.pageId);
+    if (latest.status === "running"
+      && latest.awaitingResponse
+      && latest.recoveryRefreshAt === refreshAt) {
+      latest.recoveryRefreshCount = Math.max(0, latest.recoveryRefreshCount - 1);
+      latest.recoveryRefreshAt = 0;
+      latest.reason = "等待安全的页面刷新条件";
+      latest.updatedAt = now();
+      await writeWorkflow(latest);
+    }
+    return false;
+  }
+
   async function handleWorkflow() {
     if (Commands.normalizeWorkflow(state.workflow).status !== "running") return false;
     if (!await claimWorkflow()) return false;
@@ -975,107 +978,58 @@
     if (!workflow.awaitingResponse) return false;
 
     const pageError = Platforms.findErrorState(adapter());
-    const responseActivityText = Platforms.latestResponseActivityText(adapter());
-    const responseActivityFingerprint = Commands.fingerprint(responseActivityText);
-    const responseActivityChanged = Boolean(
-      responseActivityText
-      && responseActivityFingerprint !== workflow.responseActivityFingerprint
-    );
-    if (responseActivityChanged) {
-      workflow.responseActivityFingerprint = responseActivityFingerprint;
-      workflow.responseActivityAt = now();
+    if (apiState.generating && !workflow.sawGeneration) {
+      workflow.sawGeneration = true;
+      workflow.reason = "等待 ChatGPT 最终回答";
+      workflow.updatedAt = now();
+      await writeWorkflow(workflow);
     }
 
-    if (apiState.generating) {
-      if (!workflow.sawGeneration || workflow.responseCandidateFingerprint || responseActivityChanged) {
-        workflow.sawGeneration = true;
-        workflow.responseCandidateFingerprint = "";
-        workflow.responseCandidateSince = 0;
-        workflow.reason = "ChatGPT 正在处理";
-        workflow.updatedAt = now();
-        await writeWorkflow(workflow);
-      }
-      return false;
-    }
-
-    if (now() - workflow.lastPromptAt < RESPONSE_SETTLE_MS) return false;
     const assistantText = pageError ? "" : Platforms.latestAssistantText(adapter());
     const candidateFingerprint = Commands.fingerprint(assistantText);
     const noNewAssistant = !assistantText
       || candidateFingerprint === workflow.baselineFingerprint
       || candidateFingerprint === workflow.lastAssistantFingerprint;
-    if (noNewAssistant) {
-      const responseStartMin = Number(apiState.settings?.generationWatchdogResponseStartMin) || 3;
-      const responseStartTimeoutMs = responseStartMin * 60 * 1000;
-      if (apiState.settings?.generationWatchdogEnabled && workflow.lastPromptAt > 0) {
-        const anchor = Lifecycle.responseRecoveryAnchor({
-          workflow,
-          lastGenerationAt: apiState.lastGenerationAt
-        });
-        if (now() - anchor >= responseStartTimeoutMs) {
-          if (!workflow.responseStartRefreshAt) {
-            const refreshed = await api.runAction("watchdog-response-refresh");
-            if (!refreshed) {
-              if (workflow.reason !== "回答恢复已到期，等待安全刷新条件") {
-                workflow.reason = "回答恢复已到期，等待安全刷新条件";
-                workflow.updatedAt = now();
-                await writeWorkflow(workflow);
-              }
-              return false;
-            }
-            workflow.responseStartRefreshAt = now();
-            workflow.reason = "等待回答启动超时，正在刷新当前对话";
-            workflow.updatedAt = now();
-            await writeWorkflow(workflow);
-            return true;
-          }
-          const recovered = await recoverStalledGeneration(
-            `刷新后 ${responseStartMin} 分钟仍未收到有效回答`,
-            { cause: "response-timeout" }
-          );
-          if (recovered?.ok && (recovered.handled || recovered.alreadyRecovered)) return true;
-          if (recovered?.code !== "watchdog.generation_active") {
-            const latest = await readWorkflow(state.pageId);
-            if (latest.status === "running" && latest.awaitingResponse && !latest.pendingItemId) {
-              latest.reason = `刷新后仍未收到有效回答，正在等待自动恢复：${recovered?.reason || "稍后重试"}`;
-              latest.updatedAt = now();
-              await writeWorkflow(latest);
-            }
-          }
-          return false;
-        }
-      }
-      if (responseActivityChanged) {
-        workflow.reason = "检测到 ChatGPT 页面进展，继续等待有效回答";
-        workflow.updatedAt = now();
-        await writeWorkflow(workflow);
-      }
-      return false;
-    }
-    if (workflow.responseCandidateFingerprint !== candidateFingerprint) {
+
+    if (!apiState.generating && !noNewAssistant && workflow.responseCandidateFingerprint !== candidateFingerprint) {
       workflow.responseCandidateFingerprint = candidateFingerprint;
       workflow.responseCandidateSince = now();
-      workflow.responseStartRefreshAt = 0;
       workflow.reason = "正在等待 ChatGPT 回答稳定";
       workflow.updatedAt = now();
       await writeWorkflow(workflow);
       return false;
     }
-    if (responseActivityChanged) {
-      workflow.reason = "ChatGPT 页面仍在更新，继续等待回答稳定";
-      workflow.updatedAt = now();
-      await writeWorkflow(workflow);
-      return false;
+
+    if (!apiState.generating && !noNewAssistant && workflow.responseCandidateFingerprint === candidateFingerprint) {
+      const outcome = Commands.evaluateResponse(assistantText);
+      const quietSince = Math.max(
+        workflow.responseCandidateSince || 0,
+        apiState.lastDomActivityAt || 0,
+        apiState.lastGenerationAt || 0
+      );
+      if (outcome !== "missing") {
+        if (now() - quietSince < Lifecycle.MARKER_RESPONSE_STABLE_MS) return false;
+        return processResponse();
+      }
+      if (workflow.recoveryRefreshCount === 0
+        && now() - quietSince >= Lifecycle.MISSING_MARKER_REFRESH_MS) {
+        return refreshWorkflowResponse(workflow, api, "回答不完整");
+      }
     }
-    const outcome = Commands.evaluateResponse(assistantText);
-    const quietSince = Math.max(
-      workflow.responseCandidateSince,
-      workflow.responseActivityAt || 0,
-      apiState.lastDomActivityAt || 0,
-      apiState.lastGenerationAt || 0
-    );
-    if (now() - quietSince < Lifecycle.responseStableMs(outcome)) return false;
-    return processResponse();
+
+    const recovery = Lifecycle.workflowRecoveryDecision({
+      settings: apiState.settings || {},
+      workflow,
+      now: now()
+    });
+    if (recovery.action === "refresh") {
+      return refreshWorkflowResponse(workflow, api, recovery.reason);
+    }
+    if (recovery.action === "recover") {
+      const recovered = await queueWorkflowRecovery(`${recovery.maxRefreshes} 次刷新后仍未取得完整回答`);
+      return Boolean(recovered?.ok && (recovered.handled || recovered.alreadyRecovered));
+    }
+    return false;
   }
 
   async function tick() {
@@ -1125,43 +1079,31 @@
     };
   }
 
-  async function recoverStalledGeneration(reason = "生成卡死监控", { cause = "watchdog" } = {}) {
+  async function queueWorkflowRecovery(reason) {
     await syncRoute();
     let workflow = await readWorkflow(state.pageId);
     state.workflow = workflow;
     syncUI();
 
-    if (workflow.status === "idle" || workflow.status === "completed") {
-      return { ok: true, handled: false, reason: "当前没有需要监控恢复的活动工作流" };
-    }
     if (workflow.status !== "running") {
-      return { ok: false, handled: false, reason: `工作流当前状态为 ${workflow.status}`, code: "watchdog.workflow_not_running" };
+      return { ok: false, handled: false, reason: `工作流当前状态为 ${workflow.status}`, code: "workflow.not_running" };
     }
     if (workflow.pendingItemId || !workflow.awaitingResponse) {
-      return { ok: true, handled: false, alreadyRecovered: true, reason: "工作流已离开被中断回答状态" };
+      return { ok: true, handled: false, alreadyRecovered: true, reason: "工作流已离开待恢复状态" };
     }
-    if (engine()?.getState?.().generating) {
-      return { ok: false, handled: false, reason: "ChatGPT 仍在生成", code: "watchdog.generation_active" };
-    }
+    if (engine()?.getState?.().generating) Platforms.stopGeneration(adapter());
     if (!await claimWorkflow()) {
-      return { ok: false, handled: false, reason: "无法获取工作流执行租约", code: "watchdog.workflow_claim_failed" };
+      return { ok: false, handled: false, reason: "无法取得工作流执行权", code: "workflow.claim_failed" };
     }
     workflow = Commands.normalizeWorkflow(state.workflow);
-    const prompt = Commands.workflowRecoveryPrompt(workflow, { cause });
-    if (!prompt) return { ok: false, handled: false, reason: "无法生成卡死恢复提示词", code: "watchdog.prompt_empty" };
-    const recoverySource = cause === "response-timeout"
-      ? `workflow:${workflow.kind}:response-recovery`
-      : `workflow:${workflow.kind}:watchdog`;
+    const prompt = Commands.workflowRecoveryPrompt(workflow);
+    if (!prompt) return { ok: false, handled: false, reason: "无法生成恢复提示词", code: "workflow.recovery_prompt_empty" };
     const queued = await queuePrompt(prompt, {
       workflow,
-      source: recoverySource
+      source: `workflow:${workflow.kind}:response-recovery`
     });
     if (!queued.ok) return { ...queued, handled: false };
-    await record(
-      cause === "response-timeout" ? `已发送回答中断恢复提示（${reason}）` : `已恢复被中断的生成（${reason}）`,
-      "warning",
-      cause === "response-timeout" ? "command.workflow.response_recovered" : "command.workflow.watchdog_recovered"
-    );
+    await record(`已发送工作流恢复消息（${reason}）`, "warning", "command.workflow.response_recovered");
     return { ok: true, handled: true, sent: Boolean(queued.sent) };
   }
 
@@ -1198,7 +1140,7 @@
 
   function destroy() {
     if (state.destroyed) return;
-    releaseWorkflow();
+    releaseWorkflow().catch(() => {});
     state.destroyed = true;
     window.clearTimeout(state.pollTimer);
     state.unregisterEngineClient?.();
@@ -1207,7 +1149,7 @@
     state.lifecycleHandlers = [];
   }
 
-  window.__YOLO_COMMAND_RUNTIME__ = { version: Config.VERSION, destroy, getHealth, recoverStalledGeneration };
+  window.__YOLO_COMMAND_RUNTIME__ = { version: Config.VERSION, destroy, getHealth };
   mountUI();
   const api = engine();
   state.unregisterEngineClient = api?.registerClient?.(destroy) || null;

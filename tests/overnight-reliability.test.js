@@ -30,73 +30,59 @@ test("tab supervisor reinjection uses the exact manifest content-script stack an
   assert.ok(injected.indexOf("commands.js") < injected.indexOf("rollover.js"));
 });
 
-test("active workflow protection is explicit and returns idle tabs to browser memory saving", () => {
+test("active workflow protection stays internal instead of cluttering the settings page", () => {
   const source = read("tab-supervisor.js");
   assert.match(source, /protectActiveWorkflowTabs/);
   assert.match(source, /autoDiscardable: desiredAutoDiscardable/);
-  const options = read("options.html");
-  assert.match(options, /data-setting="protectActiveWorkflowTabs"/);
-  assert.match(options, /内存节省/);
+  assert.doesNotMatch(read("options.html"), /data-setting="protectActiveWorkflowTabs"/);
 });
 
-test("workflow response-start timeout is bounded, refreshes once, then resumes with a recovery prompt", () => {
+test("workflow request recovery uses one absolute deadline and bounded refresh retries", () => {
   const runtime = read("command-runtime.js");
-  const content = read("content.js");
-  const platforms = read("platforms.js");
-  assert.match(runtime, /generationWatchdogResponseStartMin/);
-  assert.match(runtime, /responseStartRefreshAt/);
-  assert.match(runtime, /responseActivityAt/);
-  assert.match(runtime, /latestResponseActivityText/);
-  assert.doesNotMatch(runtime, /pageError \? "" : Platforms\.latestResponseActivityText/);
-  assert.match(runtime, /apiState\.lastGenerationAt/);
-  assert.doesNotMatch(runtime, /generationWatchdogEnabled && !workflow\.sawGeneration/);
-  assert.match(runtime, /watchdog-response-refresh/);
-  assert.match(runtime, /command\.workflow\.response_recovered/);
-  assert.match(content, /action === "watchdog-response-refresh"/);
-  assert.match(platforms, /turnSelectors/);
-  assert.match(platforms, /latestResponseActivityText/);
+  const handleStart = runtime.indexOf("async function handleWorkflow");
+  const handleEnd = runtime.indexOf("async function tick", handleStart);
+  const body = runtime.slice(handleStart, handleEnd);
+  assert.match(body, /Lifecycle\.workflowRecoveryDecision/);
+  assert.match(body, /refreshWorkflowResponse/);
+  assert.match(body, /queueWorkflowRecovery/);
+  assert.doesNotMatch(body, /responseActivityAt|responseStartRefreshAt|generationWatchdogResponseStartMin/);
 });
 
-test("generation watchdog progress follows visible tool and reasoning activity", () => {
+test("workflow refresh is independent of normal automation and may reload a still-generating request", () => {
   const content = read("content.js");
-  const start = content.indexOf("function updateGenerationState");
-  const end = content.indexOf("function inputActionCooldownPassed", start);
-  const updateGenerationState = content.slice(start, end);
-  assert.match(updateGenerationState, /Platforms\.latestResponseActivityText\(state\.platform\)/);
-  assert.doesNotMatch(updateGenerationState, /Platforms\.latestAssistantText\(state\.platform\)/);
-});
-
-test("workflow response recovery is independent of the general automation master switch", () => {
-  const content = read("content.js");
-  const runtime = read("command-runtime.js");
-  assert.match(content, /function automationReady\(\{ allowDisabled = false \} = \{\}\)/);
-  assert.match(content, /!allowDisabled && !state\.settings\.enabled/);
   const manualAction = content.slice(
     content.indexOf("async function runManualAction"),
     content.indexOf("async function resetRuntime")
   );
-  assert.match(manualAction, /action === "watchdog-response-refresh"/);
+  assert.match(manualAction, /action === "workflow-recovery-refresh"/);
   assert.match(manualAction, /allowDisabled: true/);
-  const timeoutBranch = runtime.slice(
-    runtime.indexOf("if (now() - anchor >= responseStartTimeoutMs)"),
-    runtime.indexOf("return false;", runtime.indexOf("if (now() - anchor >= responseStartTimeoutMs)")) + 100
+  const refresh = content.slice(
+    content.indexOf("async function refreshPage"),
+    content.indexOf("function errorSignature")
   );
-  assert.match(timeoutBranch, /const refreshed = await api\.runAction\("watchdog-response-refresh"\)/);
-  assert.ok(
-    timeoutBranch.indexOf('api.runAction("watchdog-response-refresh")')
-      < timeoutBranch.indexOf("workflow.responseStartRefreshAt = now()")
-  );
+  assert.match(refresh, /workflowRecoveryRefresh/);
+  assert.match(refresh, /generating && !workflowRecoveryRefresh/);
 });
 
-test("post-refresh response timeout queues a dedicated workflow recovery prompt instead of blocking", () => {
+test("workflow refresh releases internal ownership before reloading the page", () => {
   const runtime = read("command-runtime.js");
-  const start = runtime.indexOf("if (now() - anchor >= responseStartTimeoutMs)");
-  const end = runtime.indexOf("if (responseActivityChanged)", start);
-  const branch = runtime.slice(start, end);
-  assert.match(branch, /recoverStalledGeneration/);
-  assert.match(branch, /cause: "response-timeout"/);
-  assert.doesNotMatch(branch, /markWorkflow\("blocked"/);
-  assert.doesNotMatch(branch, /command\.workflow\.response_start_timeout/);
+  const start = runtime.indexOf("async function refreshWorkflowResponse");
+  const end = runtime.indexOf("async function handleWorkflow", start);
+  const body = runtime.slice(start, end);
+  const release = body.indexOf("await releaseWorkflow()");
+  const refresh = body.indexOf('api.runAction("workflow-recovery-refresh")');
+  assert.ok(release >= 0 && refresh > release);
+});
+
+test("settled answers without a marker enter the same simple refresh recovery path", () => {
+  const runtime = read("command-runtime.js");
+  const handleStart = runtime.indexOf("async function handleWorkflow");
+  const handleEnd = runtime.indexOf("async function tick", handleStart);
+  const body = runtime.slice(handleStart, handleEnd);
+  assert.match(body, /outcome !== "missing"/);
+  assert.match(body, /Lifecycle.MISSING_MARKER_REFRESH_MS/);
+  assert.match(body, /refreshWorkflowResponse\(workflow, api, "回答不完整"\)/);
+  assert.doesNotMatch(body, /3 * 60 * 60/);
 });
 
 test("renderer freeze recovery uses persisted heartbeats instead of waiting only on renderer replies", () => {

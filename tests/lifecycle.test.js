@@ -25,10 +25,10 @@ test("hydration waits for a real composer and a quiet DOM", () => {
   assert.equal(Lifecycle.hydrationCandidate({ documentReadyState: "complete", composerPresent: true, lastDomActivityAt: 3000, now: 5000 }), true);
 });
 
-test("missing workflow markers require a long quiet window", () => {
+test("missing workflow markers use the short refresh window", () => {
   assert.equal(Lifecycle.responseStableMs("continue"), 15000);
   assert.equal(Lifecycle.responseStableMs("done"), 15000);
-  assert.equal(Lifecycle.responseStableMs("missing"), 3 * 60 * 60 * 1000);
+  assert.equal(Lifecycle.responseStableMs("missing"), 15000);
 });
 
 test("scheduled refresh fails closed around work and recent activity", () => {
@@ -135,173 +135,105 @@ test("post-generation hold starts on the active-to-idle transition only", () => 
   );
 });
 
-test("generation watchdog distinguishes progress, soft stall, hard stall, stop grace, and recovery", () => {
+test("live status countdown shows the absolute workflow request deadline", () => {
+  const settings = {
+    workflowRequestTimeoutMin: 27,
+    workflowRefreshRetries: 3,
+    workflowRefreshWaitSec: 15
+  };
+  const workflow = {
+    status: "running",
+    awaitingResponse: true,
+    lastPromptAt: 1_000,
+    recoveryRefreshCount: 0,
+    recoveryRefreshAt: 0
+  };
+  const timers = Lifecycle.liveCountdowns({ settings, workflow, now: 61_000 });
+  assert.equal(timers.length, 1);
+  assert.equal(timers[0].id, "workflow-timeout");
+  assert.equal(timers[0].dueAt, 1_621_000);
+  assert.equal(timers[0].remainingMs, 1_560_000);
+  assert.match(timers[0].detail, /刷新页面/);
+});
+
+test("live status countdown shows bounded refresh recovery", () => {
+  const settings = {
+    workflowRequestTimeoutMin: 27,
+    workflowRefreshRetries: 3,
+    workflowRefreshWaitSec: 15
+  };
+  const workflow = {
+    status: "running",
+    awaitingResponse: true,
+    lastPromptAt: 1_000,
+    recoveryRefreshCount: 2,
+    recoveryRefreshAt: 100_000
+  };
+  const timers = Lifecycle.liveCountdowns({ settings, workflow, now: 105_000 });
+  assert.equal(timers.length, 1);
+  assert.equal(timers[0].id, "workflow-recovery");
+  assert.equal(timers[0].remainingMs, 10_000);
+  assert.equal(timers[0].phase, "2/3");
+  assert.match(timers[0].detail, /再次刷新/);
+
+  const exhausted = Lifecycle.liveCountdowns({
+    settings,
+    workflow: { ...workflow, recoveryRefreshCount: 3 },
+    now: 105_000
+  });
+  assert.match(exhausted[0].detail, /恢复消息/);
+});
+
+test("workflow recovery decision follows one timeout-refresh-recover state machine", () => {
+  const settings = {
+    workflowRequestTimeoutMin: 27,
+    workflowRefreshRetries: 3,
+    workflowRefreshWaitSec: 15
+  };
   const base = {
-    enabled: true,
-    generating: true,
-    startedAt: 1_000,
-    lastProgressAt: 9_000,
-    now: 10_000,
-    softStallMs: 5_000,
-    hardStallMs: 10_000,
-    absoluteLimitMs: 30_000,
-    stopGraceMs: 3_000,
-    recoverySettleMs: 2_000
-  };
-  assert.equal(Lifecycle.generationWatchdogDecision(base).action, "none");
-  assert.equal(Lifecycle.generationWatchdogDecision({ ...base, lastProgressAt: 4_000 }).action, "warn");
-  assert.equal(Lifecycle.generationWatchdogDecision({ ...base, lastProgressAt: 0, now: 12_000 }).action, "stop");
-  assert.equal(Lifecycle.generationWatchdogDecision({ ...base, startedAt: 1_000, lastProgressAt: 11_000, now: 31_000 }).action, "stop");
-
-  const stopping = { ...base, stopRequestedAt: 10_000, now: 12_000 };
-  assert.equal(Lifecycle.generationWatchdogDecision(stopping).action, "wait-stop");
-  assert.equal(Lifecycle.generationWatchdogDecision({ ...stopping, now: 14_000 }).action, "refresh");
-  assert.equal(Lifecycle.generationWatchdogDecision({ ...stopping, generating: false, stoppedAt: 13_000, now: 14_000 }).action, "wait-recovery");
-  assert.equal(Lifecycle.generationWatchdogDecision({ ...stopping, generating: false, stoppedAt: 13_000, now: 16_000 }).action, "resume");
-});
-
-test("generation watchdog is inert when disabled or idle", () => {
-  assert.equal(Lifecycle.generationWatchdogDecision({ enabled: false, generating: true, startedAt: 1, lastProgressAt: 1, now: 999999 }).action, "none");
-  assert.equal(Lifecycle.generationWatchdogDecision({ enabled: true, generating: false, startedAt: 1, lastProgressAt: 1, now: 999999 }).action, "none");
-});
-
-test("live status countdowns expose response recovery and watchdog deadlines", () => {
-  const settings = {
-    generationWatchdogEnabled: true,
-    generationWatchdogResponseStartMin: 3,
-    generationWatchdogSoftStallMin: 5,
-    generationWatchdogHardStallMin: 10,
-    generationWatchdogAbsoluteLimitMin: 30,
-    generationWatchdogStopGraceSec: 30,
-    queueAutoRunEnabled: true,
-    autoRefreshEnabled: true
-  };
-  const workflow = {
     status: "running",
     awaitingResponse: true,
-    sawGeneration: true,
-    responseCandidateFingerprint: "",
-    responseStartRefreshAt: 0,
-    responseActivityAt: 45_000,
     lastPromptAt: 1_000,
-    runnerExpiresAt: 90_000
-  };
-  const runtime = {
-    generationWatchdog: {
-      startedAt: 10_000,
-      lastProgressAt: 20_000,
-      stopRequestedAt: 0,
-      stoppedAt: 0
-    },
-    nextQueueAt: 70_000,
-    nextRefreshAt: 80_000
+    recoveryRefreshCount: 0,
+    recoveryRefreshAt: 0
   };
 
-  const idle = Lifecycle.liveCountdowns({
-    settings,
-    workflow,
-    runtime,
-    generating: false,
-    lastGenerationAt: 40_000,
-    lastHeartbeatAt: 45_000,
-    hidden: false,
-    now: 50_000
-  });
-  const response = idle.find((entry) => entry.id === "response-start");
-  assert.equal(response.dueAt, 225_000);
-  assert.equal(response.remainingMs, 175_000);
-  assert.equal(response.label, "回答恢复");
-  assert.equal(idle.find((entry) => entry.id === "queue").remainingMs, 20_000);
-  assert.equal(idle.find((entry) => entry.id === "refresh").remainingMs, 30_000);
-  assert.equal(idle.find((entry) => entry.id === "runner-lease").remainingMs, 40_000);
-  assert.equal(idle.find((entry) => entry.id === "heartbeat").remainingMs, 15_000);
-  assert.equal(idle.find((entry) => entry.id === "heartbeat-stale").remainingMs, 55_000);
-
-  const generating = Lifecycle.liveCountdowns({
-    settings,
-    workflow,
-    runtime,
-    generating: true,
-    lastGenerationAt: 40_000,
-    now: 50_000
-  });
-  assert.equal(generating.find((entry) => entry.id === "watchdog-soft").dueAt, 320_000);
-  assert.equal(generating.find((entry) => entry.id === "watchdog-hard").dueAt, 620_000);
-  assert.equal(generating.find((entry) => entry.id === "watchdog-absolute").dueAt, 1_810_000);
-  assert.equal(generating.some((entry) => entry.id === "response-start"), false);
-});
-
-test("response recovery anchor follows the latest real response progress", () => {
-  const workflow = {
-    lastPromptAt: 10_000,
-    sawGeneration: true,
-    responseActivityAt: 45_000,
-    responseStartRefreshAt: 0
-  };
-  assert.equal(
-    Lifecycle.responseRecoveryAnchor({ workflow, lastGenerationAt: 40_000 }),
-    45_000
+  assert.deepEqual(
+    Lifecycle.workflowRecoveryDecision({ settings, workflow: base, now: 1_620_999 }),
+    { action: "wait", reason: "等待请求绝对超时", remainingMs: 1 }
   );
   assert.equal(
-    Lifecycle.responseRecoveryAnchor({
-      workflow: { ...workflow, responseStartRefreshAt: 60_000 },
-      lastGenerationAt: 70_000
-    }),
-    70_000
+    Lifecycle.workflowRecoveryDecision({ settings, workflow: base, now: 1_621_000 }).action,
+    "refresh"
+  );
+
+  const refreshing = { ...base, recoveryRefreshCount: 2, recoveryRefreshAt: 2_000_000 };
+  assert.deepEqual(
+    Lifecycle.workflowRecoveryDecision({ settings, workflow: refreshing, now: 2_010_000 }),
+    { action: "wait", reason: "等待刷新后的页面重新加载", remainingMs: 5_000 }
+  );
+  assert.equal(
+    Lifecycle.workflowRecoveryDecision({ settings, workflow: refreshing, now: 2_015_000 }).action,
+    "refresh"
+  );
+  assert.equal(
+    Lifecycle.workflowRecoveryDecision({
+      settings,
+      workflow: { ...refreshing, recoveryRefreshCount: 3 },
+      now: 2_015_000
+    }).action,
+    "recover"
+  );
+  assert.equal(
+    Lifecycle.workflowRecoveryDecision({
+      settings,
+      workflow: { ...base, status: "paused" },
+      now: 9_999_999
+    }).action,
+    "none"
   );
 });
 
-test("live status countdowns show stop grace and second response timeout phase", () => {
-  const settings = {
-    generationWatchdogEnabled: true,
-    generationWatchdogResponseStartMin: 3,
-    generationWatchdogSoftStallMin: 5,
-    generationWatchdogHardStallMin: 10,
-    generationWatchdogAbsoluteLimitMin: 30,
-    generationWatchdogStopGraceSec: 30,
-    queueAutoRunEnabled: false,
-    autoRefreshEnabled: false
-  };
-  const workflow = {
-    status: "running",
-    awaitingResponse: true,
-    sawGeneration: true,
-    responseCandidateFingerprint: "",
-    responseStartRefreshAt: 100_000,
-    responseActivityAt: 125_000,
-    lastPromptAt: 1_000,
-    runnerExpiresAt: 0
-  };
-  const runtime = {
-    generationWatchdog: {
-      startedAt: 1_000,
-      lastProgressAt: 1_000,
-      stopRequestedAt: 120_000,
-      stoppedAt: 0
-    }
-  };
-
-  const timers = Lifecycle.liveCountdowns({
-    settings,
-    workflow,
-    runtime,
-    generating: true,
-    lastGenerationAt: 90_000,
-    now: 130_000
-  });
-  assert.equal(timers.find((entry) => entry.id === "watchdog-stop-grace").remainingMs, 20_000);
-  assert.equal(timers.some((entry) => entry.id === "watchdog-soft"), false);
-
-  const postRefresh = Lifecycle.liveCountdowns({
-    settings,
-    workflow,
-    runtime: { generationWatchdog: {} },
-    generating: false,
-    lastGenerationAt: 90_000,
-    now: 130_000
-  });
-  const response = postRefresh.find((entry) => entry.id === "response-start");
-  assert.equal(response.phase, "刷新后");
-  assert.equal(response.dueAt, 305_000);
-  assert.match(response.detail, /恢复提示/);
+test("missing marker refresh delay is short enough to reload a settled partial answer", () => {
+  assert.equal(Lifecycle.MISSING_MARKER_REFRESH_MS, 15_000);
 });

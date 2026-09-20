@@ -9,8 +9,9 @@
 
   const MAX_OBJECTIVE_LENGTH = 4000;
   const MAX_ITERATIONS = 50;
+  const WORKFLOW_VERSION = 2;
   const DEFAULT_MAX_ITERATIONS = 12;
-  const DEFAULT_AUTO_ROLLOVER_TURNS = 12;
+  const DEFAULT_AUTO_ROLLOVER_TURNS = 6;
   const DEFAULT_AUTO_ROLLOVER_MAX_CONVERSATIONS = 10;
   const WORKFLOW_STATUSES = new Set(["idle", "running", "paused", "completed", "blocked"]);
   const WORKFLOW_KINDS = new Set(["goal", "loop"]);
@@ -98,7 +99,7 @@
 
   function freshWorkflow(at = Date.now()) {
     return {
-      version: 1,
+      version: WORKFLOW_VERSION,
       revision: 0,
       id: "",
       kind: "",
@@ -120,9 +121,8 @@
       promptFingerprint: "",
       responseCandidateFingerprint: "",
       responseCandidateSince: 0,
-      responseActivityFingerprint: "",
-      responseActivityAt: 0,
-      responseStartRefreshAt: 0,
+      recoveryRefreshCount: 0,
+      recoveryRefreshAt: 0,
       runnerId: "",
       runnerExpiresAt: 0,
       lastPromptAt: 0,
@@ -140,6 +140,9 @@
     const objective = cleanText(raw.objective);
     const status = WORKFLOW_STATUSES.has(raw.status) ? raw.status : (kind && objective ? "paused" : "idle");
     const revision = Math.max(0, Math.round(finite(raw.revision, 0)));
+    const legacyDefaultRollover = finite(raw.version, 1) < WORKFLOW_VERSION
+      && raw.autoRolloverEnabled === false
+      && Math.round(finite(raw.autoRolloverAfterTurns, 12)) === 12;
     if (!kind || !objective || status === "idle") {
       return {
         ...fallback,
@@ -149,7 +152,7 @@
       };
     }
     return {
-      version: 1,
+      version: WORKFLOW_VERSION,
       revision,
       id: cleanText(raw.id, 180) || makeId(kind),
       kind,
@@ -160,8 +163,10 @@
       taskId: cleanText(raw.taskId, 180) || cleanText(raw.id, 180) || makeId("task"),
       conversationIndex: clamp(Math.round(finite(raw.conversationIndex, 1)), 1, 25),
       totalIterations: Math.max(0, Math.round(finite(raw.totalIterations, finite(raw.iteration, 0)))),
-      autoRolloverEnabled: Boolean(raw.autoRolloverEnabled),
-      autoRolloverAfterTurns: clamp(Math.round(finite(raw.autoRolloverAfterTurns, DEFAULT_AUTO_ROLLOVER_TURNS)), 2, 40),
+      autoRolloverEnabled: legacyDefaultRollover ? true : Boolean(raw.autoRolloverEnabled),
+      autoRolloverAfterTurns: legacyDefaultRollover
+        ? DEFAULT_AUTO_ROLLOVER_TURNS
+        : clamp(Math.round(finite(raw.autoRolloverAfterTurns, DEFAULT_AUTO_ROLLOVER_TURNS)), 2, 40),
       autoRolloverMaxConversations: clamp(Math.round(finite(raw.autoRolloverMaxConversations, DEFAULT_AUTO_ROLLOVER_MAX_CONVERSATIONS)), 2, 25),
       pendingItemId: cleanText(raw.pendingItemId, 180),
       awaitingResponse: Boolean(raw.awaitingResponse),
@@ -171,13 +176,8 @@
       promptFingerprint: cleanText(raw.promptFingerprint, 180),
       responseCandidateFingerprint: Boolean(raw.awaitingResponse) ? cleanText(raw.responseCandidateFingerprint, 180) : "",
       responseCandidateSince: Boolean(raw.awaitingResponse) ? Math.max(0, finite(raw.responseCandidateSince, 0)) : 0,
-      responseActivityFingerprint: (Boolean(raw.awaitingResponse) || Boolean(raw.pendingItemId))
-        ? cleanText(raw.responseActivityFingerprint, 180)
-        : "",
-      responseActivityAt: (Boolean(raw.awaitingResponse) || Boolean(raw.pendingItemId))
-        ? Math.max(0, finite(raw.responseActivityAt, 0))
-        : 0,
-      responseStartRefreshAt: Boolean(raw.awaitingResponse) ? Math.max(0, finite(raw.responseStartRefreshAt, 0)) : 0,
+      recoveryRefreshCount: Boolean(raw.awaitingResponse) ? clamp(Math.round(finite(raw.recoveryRefreshCount, 0)), 0, 20) : 0,
+      recoveryRefreshAt: Boolean(raw.awaitingResponse) ? Math.max(0, finite(raw.recoveryRefreshAt, 0)) : 0,
       runnerId: status === "running" ? cleanText(raw.runnerId, 220) : "",
       runnerExpiresAt: status === "running" ? Math.max(0, finite(raw.runnerExpiresAt, 0)) : 0,
       lastPromptAt: Math.max(0, finite(raw.lastPromptAt, 0)),
@@ -201,13 +201,14 @@
         status: "running",
         maxIterations: parsed.maxIterations,
         iteration: 0,
-        taskId: makeId("task"),
-        conversationIndex: 1,
-        totalIterations: 0,
-        autoRolloverEnabled: Boolean(rolloverPolicy?.enabled),
-        autoRolloverAfterTurns: rolloverPolicy?.afterTurns,
-        autoRolloverMaxConversations: rolloverPolicy?.maxConversations,
-        baselineFingerprint,
+      taskId: makeId("task"),
+      conversationIndex: 1,
+      totalIterations: 0,
+      autoRolloverEnabled: rolloverPolicy?.enabled ?? true,
+      autoRolloverAfterTurns: rolloverPolicy?.afterTurns ?? DEFAULT_AUTO_ROLLOVER_TURNS,
+      autoRolloverMaxConversations: rolloverPolicy?.maxConversations ?? DEFAULT_AUTO_ROLLOVER_MAX_CONVERSATIONS,
+      version: WORKFLOW_VERSION,
+      baselineFingerprint,
         lastAssistantFingerprint: baselineFingerprint,
         createdAt: at,
         updatedAt: at
@@ -227,9 +228,8 @@
       workflow.sawGeneration = false;
       workflow.responseCandidateFingerprint = "";
       workflow.responseCandidateSince = 0;
-      workflow.responseActivityFingerprint = "";
-      workflow.responseActivityAt = 0;
-      workflow.responseStartRefreshAt = 0;
+      workflow.recoveryRefreshCount = 0;
+      workflow.recoveryRefreshAt = 0;
       workflow.runnerId = "";
       workflow.runnerExpiresAt = 0;
     }
@@ -283,15 +283,12 @@
     ].join("\n\n");
   }
 
-  function workflowRecoveryPrompt(rawWorkflow, { cause = "watchdog" } = {}) {
+  function workflowRecoveryPrompt(rawWorkflow) {
     const workflow = normalizeWorkflow(rawWorkflow);
     if (workflow.status === "idle" || !workflow.kind || !workflow.objective) return "";
-    const interruption = cause === "response-timeout"
-      ? "The previous assistant turn did not produce a usable final response even after the conversation was refreshed."
-      : "The previous assistant generation was stopped by a local stuck-generation watchdog because the page stopped making reliable progress.";
     return [
       `Resume the interrupted YOLO ${workflow.kind === "goal" ? "Goal" : "Loop"} workflow for: ${workflow.objective}`,
-      interruption,
+      "The previous assistant turn still did not produce a usable final response after repeated page refreshes.",
       "Continue from whatever partial work is already visible in this conversation. Do not repeat completed work and do not resend or reinterpret the previous user prompt from scratch. Do not wait for the previous turn to resume.",
       `This is task iteration ${workflow.totalIterations + 1} of at most ${workflow.maxIterations} (chat-local turn ${workflow.iteration + 1}).`,
       `At the very end, emit exactly one marker on its own line: ${markerNames(workflow)}. Missing or malformed markers pause the workflow.`
@@ -335,8 +332,8 @@
     workflow.sawGeneration = false;
     workflow.responseCandidateFingerprint = "";
     workflow.responseCandidateSince = 0;
-    workflow.responseActivityFingerprint = "";
-    workflow.responseActivityAt = 0;
+    workflow.recoveryRefreshCount = 0;
+    workflow.recoveryRefreshAt = 0;
     workflow.lastAssistantFingerprint = fingerprint(text);
     workflow.lastResponseAt = at;
     workflow.iteration += 1;

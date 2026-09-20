@@ -17,11 +17,23 @@ test("popup and advanced page have unique element identifiers", () => {
   }
 });
 
-test("advanced page exposes every configurable setting while popup stays compact", () => {
+test("advanced page exposes the small user-facing workflow policy while popup stays compact", () => {
   const options = read("options.html");
-  for (const key of Object.keys(Config.DEFAULT_SETTINGS)) {
-    assert.match(options, new RegExp(`data-setting=["']${key}["']`), `missing advanced control for ${key}`);
-  }
+  for (const key of [
+    "autoRolloverEnabled",
+    "autoRolloverAfterTurns",
+    "workflowRequestTimeoutMin",
+    "workflowRefreshRetries",
+    "workflowRefreshWaitSec"
+  ]) assert.match(options, new RegExp(`data-setting=["']${key}["']`), `missing workflow control for ${key}`);
+  for (const hiddenTechnicalKey of [
+    "generationWatchdogSoftStallMin",
+    "generationWatchdogHardStallMin",
+    "generationWatchdogAbsoluteLimitMin",
+    "generationWatchdogStopGraceSec",
+    "generationWatchdogLimitPerHour",
+    "protectActiveWorkflowTabs"
+  ]) assert.doesNotMatch(options, new RegExp(`data-setting=["']${hiddenTechnicalKey}["']`));
 
   const popup = read("popup.html");
   assert.equal((popup.match(/<details\b/g) || []).length <= 1, true);

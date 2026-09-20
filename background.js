@@ -571,7 +571,8 @@ async function completeQueueClaim(pageId, message) {
           sawGeneration: false,
           responseCandidateFingerprint: "",
           responseCandidateSince: 0,
-          responseStartRefreshAt: 0,
+          recoveryRefreshCount: 0,
+          recoveryRefreshAt: 0,
           lastPromptAt: Date.now(),
           reason: "正在等待 ChatGPT",
           updatedAt: Date.now()

@@ -201,19 +201,6 @@
     return adapter ? latestMessageText(adapter.userSelectors, documentLike) : "";
   }
 
-  function latestResponseActivityText(adapter, documentLike = document) {
-    if (!adapter) return "";
-    const turns = uniqueElements((adapter.turnSelectors || [])
-      .flatMap((selector) => Array.from(documentLike.querySelectorAll(selector))));
-    const latestTurn = turns.at(-1);
-    if (!latestTurn) return latestAssistantText(adapter, documentLike);
-    const role = String(
-      latestTurn.querySelector?.("[data-message-author-role]")?.getAttribute?.("data-message-author-role") || ""
-    ).toLowerCase();
-    if (role === "user") return "";
-    return normalizedMultilineText(latestTurn);
-  }
-
   function isTextControl(element) {
     const tag = String(element?.tagName || "").toUpperCase();
     return tag === "TEXTAREA" || tag === "INPUT";
@@ -397,7 +384,6 @@
     stopGeneration,
     findErrorState,
     latestAssistantText,
-    latestResponseActivityText,
     latestUserText,
     userMessageSnapshot,
     composerText,

@@ -97,16 +97,12 @@
     loadGraceSec: 10,
     scanIntervalSec: 3,
     protectActiveWorkflowTabs: true,
-    autoRolloverEnabled: false,
-    autoRolloverAfterTurns: 12,
+    autoRolloverEnabled: true,
+    autoRolloverAfterTurns: 6,
     autoRolloverMaxConversations: 10,
-    generationWatchdogEnabled: true,
-    generationWatchdogResponseStartMin: 3,
-    generationWatchdogSoftStallMin: 5,
-    generationWatchdogHardStallMin: 10,
-    generationWatchdogAbsoluteLimitMin: 30,
-    generationWatchdogStopGraceSec: 30,
-    generationWatchdogLimitPerHour: 4,
+    workflowRequestTimeoutMin: 27,
+    workflowRefreshRetries: 3,
+    workflowRefreshWaitSec: 15,
     maxActionsPerSession: 100,
     pauseOnComposerText: true
   });
@@ -213,13 +209,9 @@
     autoRolloverEnabled: { type: "boolean" },
     autoRolloverAfterTurns: { type: "number", min: 2, max: 40, integer: true },
     autoRolloverMaxConversations: { type: "number", min: 2, max: 25, integer: true },
-    generationWatchdogEnabled: { type: "boolean" },
-    generationWatchdogResponseStartMin: { type: "number", min: 1, max: 120, integer: false },
-    generationWatchdogSoftStallMin: { type: "number", min: 1, max: 120, integer: false },
-    generationWatchdogHardStallMin: { type: "number", min: 1, max: 240, integer: false },
-    generationWatchdogAbsoluteLimitMin: { type: "number", min: 1, max: 720, integer: false },
-    generationWatchdogStopGraceSec: { type: "number", min: 5, max: 300, integer: false },
-    generationWatchdogLimitPerHour: { type: "number", min: 0, max: 100, integer: true },
+    workflowRequestTimeoutMin: { type: "number", min: 1, max: 120, integer: false },
+    workflowRefreshRetries: { type: "number", min: 1, max: 10, integer: true },
+    workflowRefreshWaitSec: { type: "number", min: 5, max: 120, integer: false },
     maxActionsPerSession: { type: "number", min: 0, max: 10000, integer: true },
     pauseOnComposerText: { type: "boolean" }
   });
@@ -265,6 +257,14 @@
         migrated[currentKey] = input[legacyKey];
       }
     }
+    const oldWorkflowDefaults = Object.prototype.hasOwnProperty.call(input, "generationWatchdogEnabled")
+      && !Object.prototype.hasOwnProperty.call(input, "workflowRequestTimeoutMin")
+      && input.autoRolloverEnabled === false
+      && Number(input.autoRolloverAfterTurns) === 12;
+    if (oldWorkflowDefaults) {
+      migrated.autoRolloverEnabled = true;
+      migrated.autoRolloverAfterTurns = 6;
+    }
     return migrated;
   }
 
@@ -279,8 +279,6 @@
     normalized.approvalDelayMaxSec = Math.max(normalized.approvalDelayMinSec, normalized.approvalDelayMaxSec);
     normalized.errorDelayMaxSec = Math.max(normalized.errorDelayMinSec, normalized.errorDelayMaxSec);
     normalized.refreshIntervalMaxMin = Math.max(normalized.refreshIntervalMinMin, normalized.refreshIntervalMaxMin);
-    normalized.generationWatchdogHardStallMin = Math.max(normalized.generationWatchdogSoftStallMin, normalized.generationWatchdogHardStallMin);
-    normalized.generationWatchdogAbsoluteLimitMin = Math.max(normalized.generationWatchdogHardStallMin, normalized.generationWatchdogAbsoluteLimitMin);
     normalized.pauseOnComposerText = true;
     return normalized;
   }

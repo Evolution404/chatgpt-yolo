@@ -29,7 +29,7 @@
           <button type="button" data-section-link="recovery"><span aria-hidden="true">↻</span>错误恢复</button>
           <button type="button" data-section-link="nudges"><span aria-hidden="true">↗</span>续作提醒</button>
           <button type="button" data-section-link="refresh"><span aria-hidden="true">⟳</span>页面刷新</button>
-          <button type="button" data-section-link="safety"><span aria-hidden="true">◇</span>安全</button>
+          <button type="button" data-section-link="safety"><span aria-hidden="true">◇</span>Goal / Loop</button>
           <button type="button" data-section-link="templates"><span aria-hidden="true">▤</span>模板</button>
           <button type="button" data-section-link="data"><span aria-hidden="true">•••</span>数据与重置</button>
         </nav>
@@ -149,24 +149,14 @@
           </div>
         </section>
 
-        <section id="safety" class="settings-section" data-settings-section data-search-text="safety engine load grace scan interval session action limit composer draft protection tabs memory saver overnight workflow">
-          <header class="section-header"><div><p class="section-eyebrow">安全边界</p><h2>安全与引擎</h2><p>当前对话的全局时序与输入保护设置。</p></div></header>
+        <section id="safety" class="settings-section" data-settings-section data-search-text="workflow goal loop recovery retry refresh rollover turns conversation">
+          <header class="section-header"><div><p class="section-eyebrow">长期任务</p><h2>Goal / Loop</h2><p>只保留请求恢复和长会话切换两组设置。</p></div></header>
           <div class="settings-card">
-            <label class="setting-row"><span class="control-copy"><strong>页面加载宽限</strong><small>页面跳转后等待一段时间再开始自动扫描。</small></span><div class="number-control"><input data-setting="loadGraceSec" data-kind="number" type="number" min="0" step="1"><em>秒</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>扫描间隔</strong><small>前台标签页的基础扫描间隔；后台或生成中的标签页会自动降低扫描频率。</small></span><div class="number-control"><input data-setting="scanIntervalSec" data-kind="number" type="number" min="1" step="1"><em>秒</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>保护运行中的工作流</strong><small>避免运行中的 /goal 或 /loop 标签页被 Chrome 内存节省程序丢弃。若内存压力优先于持续运行，可关闭。</small></span><input data-setting="protectActiveWorkflowTabs" data-kind="boolean" type="checkbox" role="switch" aria-label="防止运行中的工作流标签页被自动丢弃"></label>
-            <label class="setting-row"><span class="control-copy"><strong>自动切换对话</strong><small>对于新启动的 /goal 或 /loop 工作流，在当前对话过长前自动交接到新的 ChatGPT 对话。</small></span><input data-setting="autoRolloverEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="启用自动切换对话"></label>
-            <label class="setting-row"><span class="control-copy"><strong>切换前回合数</strong><small>同一对话完成指定工作流回合数后，生成严格交接信息，而不是发送下一条“继续”提示。</small></span><div class="number-control"><input data-setting="autoRolloverAfterTurns" data-kind="number" type="number" min="2" max="40" step="1"><em>回合</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>对话数量上限</strong><small>单个长期任务最多使用的对话数量；达到上限后暂停，不再创建新对话。</small></span><div class="number-control"><input data-setting="autoRolloverMaxConversations" data-kind="number" type="number" min="2" max="25" step="1"><em>个对话</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>生成卡死监控</strong><small>检测长时间处于生成状态但没有可观察输出进展的回答，并在不重发原始提示词的情况下恢复。</small></span><input data-setting="generationWatchdogEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="启用生成卡死监控"></label>
-            <label class="setting-row"><span class="control-copy"><strong>回答启动超时</strong><small>工作流提示已确认送达后，如果 ChatGPT 在这段时间内既未开始生成也未出现新回答，则自动刷新当前对话一次；刷新后再次超时会暂停工作流。</small></span><div class="number-control"><input data-setting="generationWatchdogResponseStartMin" data-kind="number" type="number" min="1" max="120" step="1"><em>分钟</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>软卡顿告警</strong><small>助手输出在指定时间内无变化时告警，但暂不执行恢复操作。</small></span><div class="number-control"><input data-setting="generationWatchdogSoftStallMin" data-kind="number" type="number" min="1" max="120" step="1"><em>分钟</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>硬卡顿恢复</strong><small>助手输出长时间无变化后请求停止生成。</small></span><div class="number-control"><input data-setting="generationWatchdogHardStallMin" data-kind="number" type="number" min="1" max="240" step="1"><em>分钟</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>单次生成绝对上限</strong><small>即使输出仍有变化，单次回答超过该时长后也执行恢复。</small></span><div class="number-control"><input data-setting="generationWatchdogAbsoluteLimitMin" data-kind="number" type="number" min="1" max="720" step="1"><em>分钟</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>停止确认宽限</strong><small>请求停止后若 ChatGPT 仍显示生成中，则等待该时长后刷新当前对话。</small></span><div class="number-control"><input data-setting="generationWatchdogStopGraceSec" data-kind="number" type="number" min="5" max="300" step="5"><em>秒</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>监控每小时限制</strong><small>滚动 1 小时内最多自动执行的停止/刷新恢复次数。</small></span><div class="number-control"><input data-setting="generationWatchdogLimitPerHour" data-kind="number" type="number" min="0" max="100" step="1"><em>次</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>会话操作上限</strong><small>在运行时历史被重置前，所有自动操作的硬性总上限。</small></span><div class="number-control"><input data-setting="maxActionsPerSession" data-kind="number" type="number" min="0" step="1"><em>次</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>保护输入框草稿</strong><small>始终开启。YOLO 绝不会覆盖你已在 ChatGPT 输入框中输入的内容。</small></span><input data-setting="pauseOnComposerText" data-kind="boolean" type="checkbox" role="switch" aria-label="输入框草稿保护始终开启" checked disabled></label>
+            <label class="setting-row"><span class="control-copy"><strong>自动切换会话</strong><small>达到设定回合数后自动交接到新 ChatGPT 会话并继续同一个任务。</small></span><input data-setting="autoRolloverEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="启用自动切换会话"></label>
+            <label class="setting-row"><span class="control-copy"><strong>每个会话最多回合</strong><small>默认 6 回合；只统计 YOLO 已确认完成的工作流回合。</small></span><div class="number-control"><input data-setting="autoRolloverAfterTurns" data-kind="number" type="number" min="2" max="40" step="1"><em>回合</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>单次请求最长等待</strong><small>从工作流消息确认发送开始计时；到期仍没有可用最终回答就刷新页面。</small></span><div class="number-control"><input data-setting="workflowRequestTimeoutMin" data-kind="number" type="number" min="1" max="120" step="1"><em>分钟</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>最多刷新重试</strong><small>请求超时或回答明显不完整时，最多连续刷新当前会话的次数。</small></span><div class="number-control"><input data-setting="workflowRefreshRetries" data-kind="number" type="number" min="1" max="10" step="1"><em>次</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>刷新后等待</strong><small>每次刷新后等待页面重新加载服务器端回答；仍没有结果再继续刷新。</small></span><div class="number-control"><input data-setting="workflowRefreshWaitSec" data-kind="number" type="number" min="5" max="120" step="1"><em>秒</em></div></label>
           </div>
         </section>
 

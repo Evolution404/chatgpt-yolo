@@ -50,10 +50,12 @@ test("creates normalized persistent goal and loop workflows", () => {
   assert.equal(goal.workflow.lastAssistantFingerprint, "old");
   assert.equal(goal.workflow.maxIterations, Commands.MAX_ITERATIONS);
   assert.equal(goal.workflow.revision, 0);
-  assert.equal(goal.workflow.autoRolloverEnabled, false);
+  assert.equal(goal.workflow.autoRolloverEnabled, true);
+  assert.equal(goal.workflow.autoRolloverAfterTurns, 6);
   assert.equal(goal.workflow.conversationIndex, 1);
   assert.ok(goal.workflow.taskId);
   assert.match(Commands.workflowPrompt(goal.workflow, "initial"), /\[YOLO:CONTINUE\]/);
+  assert.match(Commands.workflowPrompt(goal.workflow, "initial"), /\[YOLO:ROLLOVER\]/);
 
   const loop = Commands.startWorkflow("loop", "4 review again", { at: 1000 });
   assert.equal(loop.workflow.maxIterations, 4);
@@ -61,7 +63,7 @@ test("creates normalized persistent goal and loop workflows", () => {
   assert.match(Commands.workflowPrompt(loop.workflow, "continue"), /Task iteration 1 of 4/);
 });
 
-test("workflow rollover policy is normalized and rollover markers are opt-in", () => {
+test("workflow rollover policy defaults on and can still be explicitly disabled", () => {
   const started = Commands.startWorkflow("goal", "Long audit", {
     at: 1000,
     rolloverPolicy: { enabled: true, afterTurns: 9, maxConversations: 6 }
@@ -71,8 +73,31 @@ test("workflow rollover policy is normalized and rollover markers are opt-in", (
   assert.equal(started.workflow.autoRolloverMaxConversations, 6);
   assert.match(Commands.workflowPrompt(started.workflow, "initial"), /\[YOLO:ROLLOVER\]/);
 
-  const legacy = Commands.startWorkflow("goal", "Short audit", { at: 1000 }).workflow;
-  assert.doesNotMatch(Commands.workflowPrompt(legacy, "initial"), /\[YOLO:ROLLOVER\]/);
+  const defaults = Commands.startWorkflow("goal", "Short audit", { at: 1000 }).workflow;
+  assert.equal(defaults.autoRolloverEnabled, true);
+  assert.equal(defaults.autoRolloverAfterTurns, 6);
+  assert.match(Commands.workflowPrompt(defaults, "initial"), /\[YOLO:ROLLOVER\]/);
+
+  const disabled = Commands.startWorkflow("goal", "Pinned audit", {
+    at: 1000,
+    rolloverPolicy: { enabled: false, afterTurns: 6, maxConversations: 10 }
+  }).workflow;
+  assert.equal(disabled.autoRolloverEnabled, false);
+  assert.doesNotMatch(Commands.workflowPrompt(disabled, "initial"), /\[YOLO:ROLLOVER\]/);
+});
+
+test("legacy workflows using the previous default rollover policy migrate to six turns", () => {
+  const workflow = Commands.normalizeWorkflow({
+    version: 1,
+    kind: "goal",
+    objective: "continue task",
+    status: "running",
+    autoRolloverEnabled: false,
+    autoRolloverAfterTurns: 12
+  }, 1000);
+  assert.equal(workflow.version, 2);
+  assert.equal(workflow.autoRolloverEnabled, true);
+  assert.equal(workflow.autoRolloverAfterTurns, 6);
 });
 
 test("workflow response markers are unique, terminal, and case-insensitive", () => {
@@ -223,7 +248,7 @@ test("iteration safety cap remains task-wide across conversation rollover", () =
   assert.equal(rolloverAtCap.code, "command.workflow.cap_reached");
 });
 
-test("watchdog recovery prompt continues partial work without replaying the interrupted user prompt", () => {
+test("workflow recovery prompt continues partial work after repeated refresh failures", () => {
   const workflow = Commands.normalizeWorkflow({
     kind: "goal",
     objective: "finish the audit",
@@ -234,27 +259,27 @@ test("watchdog recovery prompt continues partial work without replaying the inte
     autoRolloverEnabled: true
   }, 1000);
   const prompt = Commands.workflowRecoveryPrompt(workflow);
-  assert.match(prompt, /previous assistant generation was stopped/i);
+  assert.match(prompt, /after repeated page refreshes/i);
   assert.match(prompt, /Continue from whatever partial work is already visible/i);
   assert.match(prompt, /Do not repeat completed work/i);
   assert.match(prompt, /task iteration 8 of at most 12/i);
   assert.match(prompt, /\[YOLO:ROLLOVER\]/);
 });
 
-test("response-timeout recovery prompt resumes a dead assistant turn after refresh", () => {
+test("refresh-exhausted recovery prompt resumes the unfinished task", () => {
   const workflow = Commands.normalizeWorkflow({
     kind: "goal",
     objective: "finish LBA0-LBA12",
     status: "running",
-    maxIterations: 50,
-    iteration: 0,
-    totalIterations: 0
-  }, 1000);
-  const prompt = Commands.workflowRecoveryPrompt(workflow, { cause: "response-timeout" });
-  assert.match(prompt, /did not produce a usable final response/i);
-  assert.match(prompt, /after the conversation was refreshed/i);
+    awaitingResponse: true,
+    recoveryRefreshCount: 3,
+    recoveryRefreshAt: 1234
+  }, 2000);
+  assert.equal(workflow.recoveryRefreshCount, 3);
+  assert.equal(workflow.recoveryRefreshAt, 1234);
+  const prompt = Commands.workflowRecoveryPrompt(workflow);
+  assert.match(prompt, /after repeated page refreshes/i);
   assert.match(prompt, /continue from whatever partial work is already visible/i);
-  assert.match(prompt, /do not wait for the previous turn to resume/i);
   assert.match(prompt, /\[YOLO:CONTINUE\]/);
 });
 
@@ -273,23 +298,25 @@ test("awaiting workflows retain and clear response stability candidates safely",
   const paused = Commands.setWorkflowStatus(waiting, "paused", "manual", 3000);
   assert.equal(paused.responseCandidateFingerprint, "");
   assert.equal(paused.responseCandidateSince, 0);
+  assert.equal(paused.recoveryRefreshCount, 0);
+  assert.equal(paused.recoveryRefreshAt, 0);
 });
 
-test("awaiting workflows persist response activity progress across reloads", () => {
+test("awaiting workflows persist bounded refresh recovery across reloads", () => {
   const waiting = Commands.normalizeWorkflow({
     kind: "goal",
     objective: "finish",
     status: "running",
     awaitingResponse: true,
-    responseActivityFingerprint: "activity",
-    responseActivityAt: 12345
+    recoveryRefreshCount: 2,
+    recoveryRefreshAt: 12345
   }, 13000);
-  assert.equal(waiting.responseActivityFingerprint, "activity");
-  assert.equal(waiting.responseActivityAt, 12345);
+  assert.equal(waiting.recoveryRefreshCount, 2);
+  assert.equal(waiting.recoveryRefreshAt, 12345);
 
   const paused = Commands.setWorkflowStatus(waiting, "paused", "manual", 14000);
-  assert.equal(paused.responseActivityFingerprint, "");
-  assert.equal(paused.responseActivityAt, 0);
+  assert.equal(paused.recoveryRefreshCount, 0);
+  assert.equal(paused.recoveryRefreshAt, 0);
 });
 
 test("both automated workflows pause when the terminal marker is missing", () => {

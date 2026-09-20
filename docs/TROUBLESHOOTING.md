@@ -23,7 +23,7 @@ Open Activity or run `/status` for the current reason.
 
 ## Goal or loop pauses
 
-A `/goal` pauses when ChatGPT omits a standalone terminal control marker, when manual user activity changes the conversation, when delivery identity cannot be proven, or when a safety/storage limit is reached. `/loop` also stops at its iteration cap.
+A `/goal` no longer pauses merely because a settled answer is missing its standalone terminal control marker; that condition enters the same bounded page-refresh recovery path as a timed-out request. It can still pause when manual user activity changes the owned conversation, delivery identity cannot be proven, a marker is malformed/contradictory, or a safety/storage limit is reached. `/loop` also stops at its iteration cap.
 
 ## ChatGPT UI changed
 

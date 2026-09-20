@@ -17,9 +17,9 @@
   const INPUT_SETTLE_MS = 1_500;
   const POST_GENERATION_HOLD_MS = 15_000;
   const MARKER_RESPONSE_STABLE_MS = 15_000;
-  const MISSING_MARKER_RESPONSE_STABLE_MS = 3 * 60 * 60 * 1_000;
+  const MISSING_MARKER_REFRESH_MS = 15_000;
+  const MISSING_MARKER_RESPONSE_STABLE_MS = MISSING_MARKER_REFRESH_MS;
   const REFRESH_QUIET_MS = 60_000;
-  const WATCHDOG_RECOVERY_SETTLE_MS = 15_000;
   const HEARTBEAT_VISIBLE_MS = 20_000;
   const HEARTBEAT_HIDDEN_MS = 45_000;
   const HEARTBEAT_ACTIVE_STALE_MS = 60_000;
@@ -161,73 +161,40 @@
     return Boolean(enabled && workflowStatus === "running");
   }
 
-  function generationWatchdogDecision({
-    enabled = false,
-    generating = false,
-    startedAt = 0,
-    lastProgressAt = 0,
-    stopRequestedAt = 0,
-    stoppedAt = 0,
-    now = Date.now(),
-    softStallMs = 5 * 60 * 1000,
-    hardStallMs = 10 * 60 * 1000,
-    absoluteLimitMs = 30 * 60 * 1000,
-    stopGraceMs = 30 * 1000,
-    recoverySettleMs = WATCHDOG_RECOVERY_SETTLE_MS
-  } = {}) {
-    if (!enabled) return { action: "none", reason: "生成卡死监控已关闭" };
+  function workflowRecoveryDecision({ settings = {}, workflow = {}, now = Date.now() } = {}) {
+    if (workflow?.status !== "running" || !workflow?.awaitingResponse) {
+      return { action: "none", reason: "当前工作流不在等待回答" };
+    }
+
     const timestamp = finite(now, Date.now());
-    const started = Math.max(0, finite(startedAt, 0));
-    const progress = Math.max(started, finite(lastProgressAt, started));
-    const stopAt = Math.max(0, finite(stopRequestedAt, 0));
-    const stopped = Math.max(0, finite(stoppedAt, 0));
+    const maxRefreshes = Math.max(1, Math.round(finite(settings.workflowRefreshRetries, 3)));
+    const refreshCount = Math.max(0, Math.round(finite(workflow.recoveryRefreshCount, 0)));
 
-    if (stopAt > 0) {
-      if (!generating && stopped > 0) {
-        const settleRemaining = Math.max(0, stopped + Math.max(0, finite(recoverySettleMs, WATCHDOG_RECOVERY_SETTLE_MS)) - timestamp);
-        if (settleRemaining > 0) return { action: "wait-recovery", reason: "正在等待被中断的回答稳定", retryAfterMs: settleRemaining };
-        return { action: "resume", reason: "被中断的生成已停止，可从已有部分回答继续" };
+    if (refreshCount > 0) {
+      const refreshAt = Math.max(0, finite(workflow.recoveryRefreshAt, 0));
+      const waitMs = Math.max(5, finite(settings.workflowRefreshWaitSec, 15)) * 1000;
+      const remainingMs = Math.max(0, refreshAt + waitMs - timestamp);
+      if (remainingMs > 0) {
+        return { action: "wait", reason: "等待刷新后的页面重新加载", remainingMs };
       }
-      if (generating) {
-        const graceRemaining = Math.max(0, stopAt + Math.max(0, finite(stopGraceMs, 30_000)) - timestamp);
-        if (graceRemaining > 0) return { action: "wait-stop", reason: "正在等待停止生成操作生效", retryAfterMs: graceRemaining };
-        return { action: "refresh", reason: "请求停止后仍处于生成状态" };
+      if (refreshCount < maxRefreshes) {
+        return { action: "refresh", reason: "刷新后仍未取得完整回答", refreshCount, maxRefreshes };
       }
+      return { action: "recover", reason: "刷新重试已用尽", refreshCount, maxRefreshes };
     }
 
-    if (!generating || started <= 0) return { action: "none", reason: "当前没有活动的生成任务" };
-    if (timestamp - started >= Math.max(0, finite(absoluteLimitMs, 30 * 60 * 1000))) {
-      return { action: "stop", reason: "单次生成已超过绝对时间上限", absolute: true };
-    }
-    if (timestamp - progress >= Math.max(0, finite(hardStallMs, 10 * 60 * 1000))) {
-      return { action: "stop", reason: "生成在硬卡顿时限内没有可观察进展", absolute: false };
-    }
-    if (timestamp - progress >= Math.max(0, finite(softStallMs, 5 * 60 * 1000))) {
-      return { action: "warn", reason: "生成长时间没有可观察进展" };
-    }
-    return { action: "none", reason: "生成状态仍在监控允许范围内" };
+    const lastPromptAt = Math.max(0, finite(workflow.lastPromptAt, 0));
+    if (!lastPromptAt) return { action: "wait", reason: "等待工作流请求发送", remainingMs: 0 };
+    const timeoutMs = Math.max(1, finite(settings.workflowRequestTimeoutMin, 27)) * 60 * 1000;
+    const remainingMs = Math.max(0, lastPromptAt + timeoutMs - timestamp);
+    if (remainingMs > 0) return { action: "wait", reason: "等待请求绝对超时", remainingMs };
+    return { action: "refresh", reason: "单次请求已达到最长等待时间", refreshCount: 0, maxRefreshes };
   }
 
-  function responseRecoveryAnchor({ workflow = {}, lastGenerationAt = 0 } = {}) {
-    const refreshAt = Math.max(0, finite(workflow?.responseStartRefreshAt, 0));
-    const generationEndedAt = workflow?.sawGeneration ? Math.max(0, finite(lastGenerationAt, 0)) : 0;
-    return Math.max(
-      0,
-      finite(workflow?.lastPromptAt, 0),
-      generationEndedAt,
-      finite(workflow?.responseActivityAt, 0),
-      refreshAt
-    );
-  }
 
   function liveCountdowns({
     settings = {},
     workflow = {},
-    runtime = {},
-    generating = false,
-    lastGenerationAt = 0,
-    lastHeartbeatAt = 0,
-    hidden = false,
     now = Date.now()
   } = {}) {
     const timestamp = finite(now, Date.now());
@@ -245,81 +212,26 @@
       });
     };
 
-    const watchdog = runtime?.generationWatchdog || {};
-    const watchdogEnabled = Boolean(settings.generationWatchdogEnabled);
-    if (watchdogEnabled
-      && workflow?.status === "running"
-      && workflow?.awaitingResponse
-      && !generating
-      && !workflow?.responseCandidateFingerprint
-      && finite(workflow?.lastPromptAt, 0) > 0) {
-      const timeoutMs = Math.max(0, finite(settings.generationWatchdogResponseStartMin, 3)) * 60 * 1000;
-      const responseActivityAt = Math.max(0, finite(workflow?.responseActivityAt, 0));
-      const refreshAt = Math.max(0, finite(workflow?.responseStartRefreshAt, 0));
-      const anchor = responseRecoveryAnchor({ workflow, lastGenerationAt });
-      add(
-        "response-start",
-        "回答恢复",
-        anchor + timeoutMs,
-        refreshAt ? "刷新后" : "首次等待",
-        refreshAt
-          ? "从刷新后的最近页面进展重新计时，到期后仍无有效回答则发送恢复提示"
-          : (responseActivityAt > 0 ? "从最近页面进展重新计时，到期后仍无有效回答则刷新一次" : "到期后仍无有效回答则刷新一次")
-      );
-    }
-
-    const stopRequestedAt = Math.max(0, finite(watchdog.stopRequestedAt, 0));
-    if (generating && stopRequestedAt > 0) {
-      add(
-        "watchdog-stop-grace",
-        "停止生效",
-        stopRequestedAt + Math.max(0, finite(settings.generationWatchdogStopGraceSec, 30)) * 1000,
-        "等待 Stop",
-        "到期后仍在生成则刷新当前对话"
-      );
-    } else if (generating && watchdogEnabled) {
-      const startedAt = Math.max(0, finite(watchdog.startedAt, 0));
-      const progressAt = Math.max(startedAt, finite(watchdog.lastProgressAt, startedAt));
-      if (progressAt > 0) {
+    if (workflow?.status === "running" && workflow?.awaitingResponse) {
+      const refreshCount = Math.max(0, Math.round(finite(workflow?.recoveryRefreshCount, 0)));
+      const maxRefreshes = Math.max(1, Math.round(finite(settings.workflowRefreshRetries, 3)));
+      if (refreshCount > 0 && finite(workflow?.recoveryRefreshAt, 0) > 0) {
         add(
-          "watchdog-soft",
-          "无进展告警",
-          progressAt + Math.max(0, finite(settings.generationWatchdogSoftStallMin, 5)) * 60 * 1000,
-          "生成监控",
-          "到期后记录卡顿告警"
+          "workflow-recovery",
+          "刷新后检查",
+          finite(workflow.recoveryRefreshAt, 0) + Math.max(5, finite(settings.workflowRefreshWaitSec, 15)) * 1000,
+          `${Math.min(refreshCount, maxRefreshes)}/${maxRefreshes}`,
+          refreshCount >= maxRefreshes ? "仍无结果则发送恢复消息" : "仍无结果则再次刷新"
         );
+      } else if (finite(workflow?.lastPromptAt, 0) > 0) {
         add(
-          "watchdog-hard",
-          "自动停止",
-          progressAt + Math.max(0, finite(settings.generationWatchdogHardStallMin, 10)) * 60 * 1000,
-          "生成监控",
-          "到期后请求 Stop"
+          "workflow-timeout",
+          "请求超时",
+          finite(workflow.lastPromptAt, 0) + Math.max(1, finite(settings.workflowRequestTimeoutMin, 27)) * 60 * 1000,
+          "等待最终回答",
+          "到期仍没有可用最终回答则刷新页面"
         );
       }
-      if (startedAt > 0) {
-        add(
-          "watchdog-absolute",
-          "生成上限",
-          startedAt + Math.max(0, finite(settings.generationWatchdogAbsoluteLimitMin, 30)) * 60 * 1000,
-          "绝对上限",
-          "达到上限后请求 Stop"
-        );
-      }
-    }
-
-    if (settings.queueAutoRunEnabled) {
-      add("queue", "队列检查", runtime?.nextQueueAt, "自动队列", "下一次允许自动发送的时间点");
-    }
-    if (settings.autoRefreshEnabled) {
-      add("refresh", "定时刷新", runtime?.nextRefreshAt, "空闲刷新", "仅在安全且空闲时执行");
-    }
-    if (workflow?.status === "running") {
-      add("runner-lease", "执行租约", workflow?.runnerExpiresAt, "自动续租", "当前标签页的工作流执行权");
-    }
-    const heartbeatAt = Math.max(0, finite(lastHeartbeatAt, 0));
-    if (heartbeatAt > 0) {
-      add("heartbeat", "下次心跳", heartbeatAt + heartbeatIntervalMs({ hidden }), "标签页存活", "正常运行时会定期刷新");
-      add("heartbeat-stale", "心跳失联恢复", heartbeatAt + heartbeatStaleMs({ hidden }), "强恢复阈值", "超过阈值后后台监督器会尝试恢复标签页");
     }
     return timers;
   }
@@ -332,9 +244,9 @@
     INPUT_SETTLE_MS,
     POST_GENERATION_HOLD_MS,
     MARKER_RESPONSE_STABLE_MS,
+    MISSING_MARKER_REFRESH_MS,
     MISSING_MARKER_RESPONSE_STABLE_MS,
     REFRESH_QUIET_MS,
-    WATCHDOG_RECOVERY_SETTLE_MS,
     scanDelay,
     routeDelay,
     mutationDelay,
@@ -347,8 +259,7 @@
     nextGenerationHoldUntil,
     canAutomaticRefresh,
     shouldProtectTab,
-    generationWatchdogDecision,
-    responseRecoveryAnchor,
+    workflowRecoveryDecision,
     liveCountdowns
   });
 });

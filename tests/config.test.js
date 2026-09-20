@@ -10,10 +10,9 @@ test("normalizes and clamps settings with interval invariants", () => {
     scanIntervalSec: 500,
     autoRolloverAfterTurns: 1,
     autoRolloverMaxConversations: 99,
-    generationWatchdogSoftStallMin: 20,
-    generationWatchdogHardStallMin: 5,
-    generationWatchdogAbsoluteLimitMin: 7,
-    generationWatchdogStopGraceSec: 1,
+    workflowRequestTimeoutMin: 999,
+    workflowRefreshRetries: 99,
+    workflowRefreshWaitSec: 1,
     queueMaxRetries: "2.6"
   });
   assert.equal(settings.queueIntervalMinSec, 50);
@@ -22,19 +21,18 @@ test("normalizes and clamps settings with interval invariants", () => {
   assert.equal(settings.scanIntervalSec, 60);
   assert.equal(settings.autoRolloverAfterTurns, 2);
   assert.equal(settings.autoRolloverMaxConversations, 25);
-  assert.equal(settings.generationWatchdogHardStallMin, 20);
-  assert.equal(settings.generationWatchdogAbsoluteLimitMin, 20);
-  assert.equal(settings.generationWatchdogStopGraceSec, 5);
+  assert.equal(settings.workflowRequestTimeoutMin, 120);
+  assert.equal(settings.workflowRefreshRetries, 10);
+  assert.equal(settings.workflowRefreshWaitSec, 5);
   assert.equal(settings.queueMaxRetries, 3);
 });
 
-test("stuck generation watchdog defaults are conservative and enabled", () => {
-  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogEnabled, true);
-  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogResponseStartMin, 3);
-  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogSoftStallMin, 5);
-  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogHardStallMin, 10);
-  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogAbsoluteLimitMin, 30);
-  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogStopGraceSec, 30);
+test("workflow recovery defaults match the simple unattended policy", () => {
+  assert.equal(Config.DEFAULT_SETTINGS.workflowRequestTimeoutMin, 27);
+  assert.equal(Config.DEFAULT_SETTINGS.workflowRefreshRetries, 3);
+  assert.equal(Config.DEFAULT_SETTINGS.workflowRefreshWaitSec, 15);
+  assert.equal(Config.DEFAULT_SETTINGS.autoRolloverEnabled, true);
+  assert.equal(Config.DEFAULT_SETTINGS.autoRolloverAfterTurns, 6);
 });
 
 test("migrates legacy boolean setting names", () => {
@@ -43,6 +41,16 @@ test("migrates legacy boolean setting names", () => {
   assert.equal(settings.errorRecoveryEnabled, false);
   assert.equal(settings.deepNudgesEnabled, true);
   assert.equal(settings.autoRefreshEnabled, true);
+});
+
+test("migrates the previous default workflow policy to the new six-turn policy", () => {
+  const settings = Config.mergeSettings(Config.DEFAULT_SETTINGS, {
+    generationWatchdogEnabled: true,
+    autoRolloverEnabled: false,
+    autoRolloverAfterTurns: 12
+  });
+  assert.equal(settings.autoRolloverEnabled, true);
+  assert.equal(settings.autoRolloverAfterTurns, 6);
 });
 
 test("normalizes conversation URLs into stable page IDs", () => {

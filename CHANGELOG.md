@@ -4,10 +4,11 @@ All notable changes are documented here.
 
 ## Unreleased
 
-- Fixed long ChatGPT tool/reasoning turns being mistaken for stalled responses: YOLO now tracks visible conversation-turn activity separately from the final assistant message, moves both response-recovery and generation-watchdog deadlines forward when that turn advances, and no longer treats the informational “retry with a faster model” notice as an error. If a response is genuinely dead, YOLO refreshes once; after another full no-progress window it now queues a dedicated continuation prompt that resumes from visible partial work instead of blocking the Goal/Loop.
-- Fixed a response-recovery live-lock where an active Goal/Loop could reach an expired recovery timer while the general automation switch was off, repeatedly flip recovery state, and never refresh. Workflow-critical watchdog refresh now remains available for an explicitly running Goal/Loop, the refresh marker is committed only after a reload is actually scheduled, and the live status window updates existing DOM nodes instead of rebuilding itself every poll.
-- Fixed unattended Goal/Loop recovery when ChatGPT briefly enters generation and then surfaces a localized send-timeout error without a usable assistant response: Chinese timeout/retry alerts are now recognized, and the 3-minute response recovery timer still applies after generation has already started once.
-- Added an in-page live YOLO status window for active Goal/Loop workflows. It shows the current execution phase plus live countdowns for response recovery, response stabilization, 5-minute/10-minute/30-minute generation watchdog thresholds, Stop grace refresh, content heartbeat/stale-heartbeat recovery, queue scheduling, periodic refresh, and runner lease renewal; the workflow bar also shows the next timed action at a glance.
+- Simplified Goal/Loop request recovery to one absolute policy: 27-minute request timeout, up to 3 same-conversation refreshes with 15-second checks, then a dedicated recovery continuation. Page/tool activity no longer extends the request deadline.
+- Removed the separate 3-minute response-start and 5/10/30-minute generation-watchdog state machines from Goal/Loop execution; incomplete marker-less answers enter the same bounded refresh path.
+- Simplified the Goal/Loop settings and live status UI to user-relevant state only. Internal heartbeat and cross-tab ownership remain implementation safeguards but no longer appear as user-facing countdowns.
+- Enabled automatic conversation rollover by default for new Goal/Loop workflows and changed the default threshold from 12 to 6 completed chat-local turns.
+- Kept localized ChatGPT timeout/error detection while avoiding false positives from informational “retry with a faster model” notices.
 
 ## 1.2.0 - 2026-09-20
 

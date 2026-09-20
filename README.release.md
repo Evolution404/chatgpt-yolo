@@ -28,9 +28,8 @@ Then load `dist/yolo` as an unpacked extension.
 - Type `/` in an empty ChatGPT composer to open the YOLO command palette.
 - Use `/goal` or `/loop` to run a bounded workflow with Pause, Edit, and Stop controls.
 - Use `/rollover` to hand off the current task into a fresh ChatGPT conversation without manual copy/paste.
-- Enable automatic conversation rollover in Advanced settings for newly started Goal/Loop workflows.
-- The stuck-generation watchdog is enabled by default with conservative 5/10/30 minute thresholds and can be tuned in Advanced -> Safety & engine.
-- Delivered Goal/Loop prompts also have a 3-minute response-start watchdog so a request that never begins generating cannot wait forever.
+- Automatic conversation rollover is enabled by default for newly started Goal/Loop workflows and switches after 6 completed workflow turns unless changed in settings.
+- Goal/Loop recovery uses one simple policy: wait up to 27 minutes for a final answer, refresh the current conversation up to 3 times with 15 seconds between checks, then send a recovery continuation if needed.
 - Protected running workflows use background heartbeats and safe tab replacement to recover from a fully unresponsive ChatGPT renderer without replaying the original prompt.
 - The extension UI is Chinese-first; machine control markers and slash command names remain unchanged for compatibility.
 - Visit the extension options page to adjust profiles, limits, and recovery behavior.

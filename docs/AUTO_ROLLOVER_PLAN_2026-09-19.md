@@ -76,10 +76,10 @@ Rollover history is intentionally not required for correctness. A bounded user-f
 
 ## Phase 4 - Automatic rollover policy
 
-**Status: implemented, opt-in by default.**
+**Status: implemented, enabled by default for new workflows.**
 
-- Advanced settings expose `Automatic conversation rollover`, `Turns before rollover`, and `Conversation limit`.
-- Default policy for a newly started workflow is disabled, with configured values of 12 chat-local turns and 10 conversations. Enabling the setting affects newly started Goal/Loop workflows; each workflow snapshots its policy so later per-conversation setting changes cannot silently alter a running task.
+- Advanced settings expose the automatic rollover toggle and the chat-local turn threshold; the conversation cap remains an internal safety bound.
+- Default policy for a newly started workflow is enabled at 6 completed chat-local turns, with an internal 10-conversation safety cap. Each workflow snapshots its policy so later settings changes cannot silently alter a running task.
 - `iteration` is the number of completed workflow turns in the current ChatGPT conversation.
 - `totalIterations` is the task-wide count across all rollover conversations.
 - `maxIterations` remains a task-wide safety cap. `/loop 20` can never gain another 20 iterations merely by rolling into a fresh chat.
@@ -94,7 +94,7 @@ Rollover history is intentionally not required for correctness. A bounded user-f
 
 Expose current task, conversation count, current-chat turns, total turns, last rollover, pause/stop, and `Rollover now` controls. Keep the default popup compact; advanced controls belong in the existing advanced surface.
 
-Current UI already exposes the three automatic-rollover settings in Advanced and `/status` reports the rollover phase, chat index, total turns, and policy. A richer task/history panel remains pending.
+Current UI exposes the rollover toggle and turn threshold in the simplified Goal / Loop settings. `/status` reports the current conversation index, chat-local turns, total turns, and active rollover policy without exposing internal transaction or ownership timers. A richer task/history panel remains pending.
 
 ## Phase 6 - Hardening
 
@@ -115,23 +115,18 @@ Current validation on 2026-09-19:
 - no new browser permission or host permission was added;
 - browser-restart tests cover same-session tab isolation, restored source-route rebinding, and token-gated transient-route rebinding.
 
-### Stuck-generation watchdog
+### Simple request recovery
 
-Long-running unattended workflows must also survive a ChatGPT page that remains in a generating state without making useful output progress. The 1.2.0 candidate therefore includes a local watchdog with these defaults:
+Goal/Loop no longer uses separate response-start and 5/10/30-minute generation-watchdog state machines. The request lifecycle is deliberately bounded and easy to reason about:
 
-- soft warning after 5 minutes without assistant text fingerprint changes;
-- request the visible `Stop generating` control after 10 minutes without progress;
-- absolute generation cap of 30 minutes even if output continues changing;
-- after requesting Stop, allow 30 seconds for the generation state to clear before a bounded same-chat refresh fallback;
-- at most 4 watchdog recovery actions per rolling hour by default.
+- the workflow prompt has an absolute 27-minute deadline from confirmed delivery;
+- visible tool/reasoning/page activity does not move that deadline;
+- on timeout, YOLO reloads the same durable conversation and waits 15 seconds for the server-side response to rehydrate;
+- it performs at most 3 refresh attempts by default;
+- if no usable final response is recovered, YOLO queues a dedicated continuation that resumes from already-visible partial work without replaying the original task;
+- a settled answer missing its YOLO control marker enters the same bounded refresh path after a short stability check.
 
-The watchdog never replays the interrupted user prompt. When an active Goal/Loop generation is successfully stopped, command-runtime atomically queues a dedicated recovery continuation that explicitly resumes from the partial response already visible in the conversation. For non-workflow chats, it may queue a plain `Continue` only after generation is confirmed idle. Watchdog state is kept in per-tab session storage so a refresh can finish the same recovery transaction instead of starting a duplicate one.
-
-The 1.2.0 release also covers two failure modes outside the original generating-state watchdog:
-
-- **Response never starts:** once a workflow prompt is confirmed delivered, a configurable response-start timer (default 3 minutes) refreshes the current conversation once if ChatGPT never begins generating and no new assistant response appears. A second timeout blocks the workflow instead of waiting indefinitely.
-- **Renderer fully freezes:** content scripts persist liveness heartbeats to `chrome.storage.session`. A protected running workflow whose heartbeat becomes stale is eligible for strong recovery only at the safe `awaitingResponse && !pendingItemId` boundary. YOLO clears the stale runner lease, opens the same durable conversation in a replacement tab, closes the unresponsive tab on a best-effort basis, and lets the new runtime consume the server-side response. Active rollover transactions block this strong replacement path and fall back to the narrower recovery behavior.
-
+Renderer liveness remains a separate internal safeguard. Content scripts persist heartbeats so the background supervisor can recover a truly frozen tab, but heartbeat cadence and workflow ownership are not task timers and are not exposed as Goal/Loop recovery policy.
 Final real-browser acceptance on 2026-09-20 used a Chrome profile cloned from an authenticated ChatGPT environment and the packaged unpacked extension. The normal two-turn Goal smoke completed automatically (`TEST_STEP_1` -> `[YOLO:CONTINUE]` -> `TEST_STEP_2` -> `[YOLO:DONE]`). A second smoke deliberately locked the ChatGPT renderer after the Goal prompt reached `running + awaitingResponse`; the replacement tab reloaded the same `/c/...` conversation, recovered `TEST_FREEZE_RECOVERED\n[YOLO:DONE]`, and advanced the durable workflow to `completed` without replaying the original prompt. Manual `/rollover smoke` then completed from a canonical source `/c/<id>` through strict handoff, transient bootstrap, and a distinct canonical target `/c/<id>` with `phase=bound`. Finally, an automatic-rollover Goal with a 2-turn threshold completed turn 1 and turn 2 in the source conversation, automatically rolled over, restored the workflow with `conversationIndex=2`, completed turn 3 in the successor conversation, and ended with `totalIterations=3` and `status=completed`.
 
 Before a release is marked production-ready, perform a real unpacked-extension smoke test against the current ChatGPT DOM for both `/rollover` and one automatic threshold rollover. DOM behavior is intentionally not inferred solely from unit tests.
@@ -148,6 +143,6 @@ Manual cross-chat continuation:
 Automatic cross-chat continuation:
 
 1. In Advanced -> Safety & engine, enable `Automatic conversation rollover`.
-2. Set `Turns before rollover` and `Conversation limit` as desired. Defaults are 12 and 10.
+2. Set `Turns before rollover` as desired. The default is 6 completed chat-local turns; the internal conversation safety cap defaults to 10.
 3. Start a new `/goal ...` or `/loop N ...` workflow. Existing workflows are not silently changed.
 4. When a completed workflow response reaches the chat-local threshold, or explicitly returns `[YOLO:ROLLOVER]`, YOLO performs the same strict handoff/bootstrap/bind sequence automatically.

@@ -17,8 +17,7 @@
     recovery: "continuesSent",
     nudge: "deepNudgesSent",
     refresh: "refreshesTriggered",
-    queue: "queuedMessagesSent",
-    watchdog: "generationRecoveries"
+    queue: "queuedMessagesSent"
   });
 
   const LIMIT_FIELD_BY_ACTION = Object.freeze({
@@ -26,8 +25,7 @@
     recovery: "errorLimitPerHour",
     nudge: "deepNudgeLimitPerHour",
     refresh: "refreshLimitPerHour",
-    queue: "queueLimitPerHour",
-    watchdog: "generationWatchdogLimitPerHour"
+    queue: "queueLimitPerHour"
   });
 
   const FAILED_RECOVERY_RETRY_MS = 15 * 1000;
@@ -308,54 +306,15 @@
     const active = Platforms.isGenerating(state.platform);
     const timestamp = now();
     const wasGenerating = state.generationActive;
-    const transitioned = wasGenerating !== active;
     state.generationHoldUntil = Lifecycle.nextGenerationHoldUntil({
       wasGenerating,
       generating: active,
       currentHoldUntil: state.generationHoldUntil,
       now: timestamp
     });
-    if (state.runtime) {
-      const watchdog = state.runtime.generationWatchdog || (state.runtime.generationWatchdog = {
-        startedAt: 0,
-        lastProgressAt: 0,
-        lastAssistantFingerprint: "",
-        softWarnedAt: 0,
-        stopRequestedAt: 0,
-        stoppedAt: 0,
-        refreshRequestedAt: 0
-      });
-      const assistantFingerprint = Commands.fingerprint(Platforms.latestResponseActivityText(state.platform));
-      if (active && !wasGenerating) {
-        watchdog.startedAt = timestamp;
-        watchdog.lastProgressAt = timestamp;
-        watchdog.lastAssistantFingerprint = assistantFingerprint;
-        watchdog.softWarnedAt = 0;
-        watchdog.stopRequestedAt = 0;
-        watchdog.stoppedAt = 0;
-        watchdog.refreshRequestedAt = 0;
-      } else if (active) {
-        if (assistantFingerprint && assistantFingerprint !== watchdog.lastAssistantFingerprint) {
-          watchdog.lastAssistantFingerprint = assistantFingerprint;
-          watchdog.lastProgressAt = timestamp;
-          watchdog.softWarnedAt = 0;
-        }
-        if (!watchdog.startedAt) watchdog.startedAt = timestamp;
-        if (!watchdog.lastProgressAt) watchdog.lastProgressAt = timestamp;
-      } else if (wasGenerating && watchdog.stopRequestedAt) {
-        watchdog.stoppedAt = timestamp;
-      } else if (!watchdog.stopRequestedAt) {
-        watchdog.startedAt = 0;
-        watchdog.lastProgressAt = 0;
-        watchdog.lastAssistantFingerprint = "";
-        watchdog.softWarnedAt = 0;
-        watchdog.stoppedAt = 0;
-        watchdog.refreshRequestedAt = 0;
-      } else if (!active && watchdog.stopRequestedAt && !watchdog.stoppedAt) {
-        watchdog.stoppedAt = timestamp;
-      }
-      if (active || (wasGenerating && !active)) state.runtime.lastGenerationAt = timestamp;
-      if (transitioned || (active && timestamp - state.lastGenerationPersistAt >= 30_000)) {
+    if (state.runtime && (active || wasGenerating !== active)) {
+      state.runtime.lastGenerationAt = timestamp;
+      if (wasGenerating !== active || timestamp - state.lastGenerationPersistAt >= 30_000) {
         state.lastGenerationPersistAt = timestamp;
         ContentState.saveRuntime();
       }
@@ -370,19 +329,6 @@
     return now() - lastAt >= cooldownSec * 1000;
   }
 
-  function resetGenerationWatchdog() {
-    if (!state.runtime?.generationWatchdog) return;
-    state.runtime.generationWatchdog = {
-      startedAt: 0,
-      lastProgressAt: 0,
-      lastAssistantFingerprint: "",
-      softWarnedAt: 0,
-      stopRequestedAt: 0,
-      stoppedAt: 0,
-      refreshRequestedAt: 0
-    };
-    ContentState.saveRuntime();
-  }
 
   async function writeAndSubmit(prompt, actionPageId) {
     let submissionAttempted = false;
@@ -572,9 +518,7 @@
   }
 
   function refreshCooldownPassed(action = "refresh") {
-    const cooldownMs = action === "watchdog"
-      ? Math.max(30_000, state.settings.generationWatchdogStopGraceSec * 1000)
-      : state.settings.refreshCooldownMin * 60 * 1000;
+    const cooldownMs = state.settings.refreshCooldownMin * 60 * 1000;
     return now() - (state.runtime.lastRefreshAt || 0) >= cooldownMs;
   }
 
@@ -585,9 +529,7 @@
     if (!automatic && (!state.loaded || !routeIsCurrent() || !Config.isDurablePageId(state.pageId))) return false;
     const workflow = workflowHealth();
     const generating = updateGenerationState();
-    const watchdogForceRefresh = action === "watchdog"
-      && Boolean(state.runtime?.generationWatchdog?.stopRequestedAt)
-      && now() - state.runtime.generationWatchdog.stopRequestedAt >= state.settings.generationWatchdogStopGraceSec * 1000;
+    const workflowRecoveryRefresh = action === "workflow-recovery";
     if (action === "refresh" && automatic && !Lifecycle.canAutomaticRefresh({
       hydrated: state.hydrated,
       workflowActive: workflow.active,
@@ -596,19 +538,20 @@
       lastDomActivityAt: state.lastDomActivityAt,
       now: now()
     })) return false;
-    if ((generating && !watchdogForceRefresh) || composerHasText()) return false;
-    if (!refreshCooldownPassed(action)) return false;
+    if ((generating && !workflowRecoveryRefresh) || composerHasText()) return false;
+    if (!workflowRecoveryRefresh && !refreshCooldownPassed(action)) return false;
 
-    const limit = checkActionLimit(action);
-    if (!limit.allowed) {
-      await setLastAction(`刷新已阻止：${limit.reason}`, "warning", limit.code, true);
-      return false;
+    if (!workflowRecoveryRefresh) {
+      const limit = checkActionLimit(action);
+      if (!limit.allowed) {
+        await setLastAction(`刷新已阻止：${limit.reason}`, "warning", limit.code, true);
+        return false;
+      }
     }
 
-    const cooldownMs = action === "watchdog"
-      ? Math.max(30_000, state.settings.generationWatchdogStopGraceSec * 1000)
-      : state.settings.refreshCooldownMin * 60 * 1000;
-    const guard = await claimActionGuard("refresh", cooldownMs, Math.max(2 * 60 * 1000, cooldownMs));
+    const cooldownMs = state.settings.refreshCooldownMin * 60 * 1000;
+    const guardKey = workflowRecoveryRefresh ? "workflow-recovery-refresh" : "refresh";
+    const guard = await claimActionGuard(guardKey, workflowRecoveryRefresh ? 0 : cooldownMs, Math.max(2 * 60 * 1000, cooldownMs));
     if (!guard?.ok) return false;
 
     state.actionInFlight = true;
@@ -617,13 +560,13 @@
       if (state.pageId !== actionPageId || currentPageId() !== actionPageId || composerHasText()) return false;
       state.runtime.lastRefreshAt = now();
       ContentState.scheduleNextRefresh(true);
-      const completed = await completeActionGuard("refresh", guard.token);
+      const completed = await completeActionGuard(guardKey, guard.token);
       completedGuard = Boolean(completed?.ok);
       if (!completedGuard) {
         await setLastAction("刷新已阻止：无法保存跨标签页冷却状态", "error", "refresh.guard_unconfirmed", true);
         return false;
       }
-      await recordAction(action);
+      if (!workflowRecoveryRefresh) await recordAction(action);
       await setLastAction(`正在刷新（${reason}）`, "success", `action.${action}.refresh`, true);
       state.reloadScheduled = true;
       window.setTimeout(() => {
@@ -636,7 +579,7 @@
       }, automatic ? 500 : 150);
       return true;
     } finally {
-      if (!completedGuard) await releaseActionGuard("refresh", guard.token);
+      if (!completedGuard) await releaseActionGuard(guardKey, guard.token);
       if (!state.reloadScheduled) state.actionInFlight = false;
     }
   }
@@ -685,97 +628,6 @@
     return handled;
   }
 
-  async function handleGenerationWatchdog() {
-    if (!state.runtime?.generationWatchdog) return false;
-    const watchdog = state.runtime.generationWatchdog;
-    const generating = updateGenerationState();
-    const decision = Lifecycle.generationWatchdogDecision({
-      enabled: state.settings.generationWatchdogEnabled || Boolean(watchdog.stopRequestedAt),
-      generating,
-      startedAt: watchdog.startedAt,
-      lastProgressAt: watchdog.lastProgressAt,
-      stopRequestedAt: watchdog.stopRequestedAt,
-      stoppedAt: watchdog.stoppedAt,
-      now: now(),
-      softStallMs: state.settings.generationWatchdogSoftStallMin * 60 * 1000,
-      hardStallMs: state.settings.generationWatchdogHardStallMin * 60 * 1000,
-      absoluteLimitMs: state.settings.generationWatchdogAbsoluteLimitMin * 60 * 1000,
-      stopGraceMs: state.settings.generationWatchdogStopGraceSec * 1000
-    });
-
-    if (decision.action === "none" || decision.action === "wait-stop" || decision.action === "wait-recovery") return false;
-    if (decision.action === "warn") {
-      if (watchdog.softWarnedAt) return false;
-      watchdog.softWarnedAt = now();
-      ContentState.saveRuntime();
-      await setLastAction(`生成卡死监控告警：${decision.reason}`, "warning", "watchdog.soft_stall", true);
-      return false;
-    }
-    if (decision.action === "stop") {
-      if (state.actionInFlight || watchdog.stopRequestedAt) return false;
-      const limit = checkActionLimit("watchdog");
-      if (!limit.allowed) {
-        await setLastAction(`生成卡死监控已阻止：${limit.reason}`, "warning", limit.code, true);
-        return false;
-      }
-      const clicked = Platforms.stopGeneration(state.platform);
-      watchdog.stopRequestedAt = now();
-      watchdog.stoppedAt = 0;
-      watchdog.refreshRequestedAt = 0;
-      ContentState.saveRuntime();
-      await recordAction("watchdog");
-      await setLastAction(
-        clicked
-          ? `Generation watchdog requested Stop: ${decision.reason}`
-          : `Generation watchdog could not find Stop; refresh fallback armed: ${decision.reason}`,
-        "warning",
-        clicked ? "watchdog.stop_requested" : "watchdog.stop_missing",
-        true
-      );
-      return true;
-    }
-    if (decision.action === "refresh") {
-      if (state.actionInFlight || state.reloadScheduled) return false;
-      watchdog.refreshRequestedAt = now();
-      ContentState.saveRuntime();
-      const refreshed = await refreshPage(
-        "stuck generation watchdog fallback",
-        true,
-        "watchdog",
-        { allowDisabled: workflowHealth().active }
-      );
-      if (!refreshed) {
-        await setLastAction("生成卡死监控正在等待安全的刷新时机", "warning", "watchdog.refresh_waiting");
-      }
-      return refreshed;
-    }
-    if (decision.action === "resume") {
-      if (state.actionInFlight) return false;
-      const workflow = workflowHealth();
-      if (workflow.pendingItemId || (workflow.active && !workflow.awaitingResponse)) {
-        resetGenerationWatchdog();
-        return false;
-      }
-
-      let recovered = false;
-      if (workflow.active) {
-        const result = await window.__YOLO_COMMAND_RUNTIME__?.recoverStalledGeneration?.(decision.reason);
-        recovered = Boolean(result?.ok && (result.handled || result.alreadyRecovered));
-        if (!result?.ok && result?.code && result.code !== "watchdog.generation_active") {
-          await setLastAction(`生成卡死监控正在等待工作流恢复：${result.reason || result.code}`, "warning", result.code);
-        }
-      } else {
-        recovered = await sendContinue("stuck generation watchdog", true);
-      }
-
-      if (recovered) {
-        resetGenerationWatchdog();
-        await setLastAction("生成卡死监控已从被中断的回答继续", "success", "watchdog.recovered", true);
-      }
-      return recovered;
-    }
-    return false;
-  }
 
   function pruneApprovalSignatures() {
     state.runtime.approvalSignatures = ContentState.normalizeApprovalSignatures(state.runtime.approvalSignatures, state.runtime.lastActionAt);
@@ -1013,7 +865,6 @@
       updateGenerationState();
       if (!probeHydration()) return;
       if (await handleErrorState()) return;
-      if (await handleGenerationWatchdog()) return;
       if (await handleApprovalCards()) return;
       if (state.pendingManualQueueRetry && await handleQueue(false)) return;
       if (await handleQueue(true)) return;
@@ -1219,11 +1070,11 @@
     if (action === "nudge") return sendDeepNudge("manual", false);
     if (action === "continue") return sendContinue("manual", false);
     if (action === "refresh") return refreshPage("manual", false);
-    if (action === "watchdog-response-refresh") {
+    if (action === "workflow-recovery-refresh") {
       return refreshPage(
-        "工作流等待 ChatGPT 回答启动超时",
+        "工作流请求恢复",
         true,
-        "watchdog",
+        "workflow-recovery",
         { allowDisabled: true }
       );
     }

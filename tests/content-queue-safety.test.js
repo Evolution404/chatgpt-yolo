@@ -29,25 +29,15 @@ test("queue wake scheduling keeps the earliest requested wake", () => {
   assert.match(source, /window\.clearTimeout\(state\.scanWakeTimer\)/);
 });
 
-test("stuck generation watchdog never replays the original prompt", () => {
-  const start = source.indexOf("async function handleGenerationWatchdog");
-  const end = source.indexOf("function pruneApprovalSignatures", start);
-  const handler = source.slice(start, end);
-  assert.match(handler, /Lifecycle\.generationWatchdogDecision/);
-  assert.match(handler, /Platforms\.stopGeneration/);
-  assert.match(handler, /recoverStalledGeneration/);
-  assert.match(handler, /sendContinue\("stuck generation watchdog"/);
-  assert.doesNotMatch(handler, /writeAndSubmit/);
-  assert.doesNotMatch(handler, /lastUserText/);
+test("content engine no longer owns a separate generation-watchdog state machine", () => {
+  assert.doesNotMatch(source, /handleGenerationWatchdog|generationWatchdogDecision|generationWatchdogSoftStallMin/);
 });
 
-test("watchdog refresh may override generation only after a persisted Stop request grace", () => {
+test("workflow recovery refresh may reload even while ChatGPT still appears to be generating", () => {
   const start = source.indexOf("async function refreshPage");
   const end = source.indexOf("function errorSignature", start);
   const handler = source.slice(start, end);
-  assert.match(handler, /watchdogForceRefresh/);
-  assert.match(handler, /generationWatchdog\.stopRequestedAt/);
-  assert.match(handler, /generationWatchdogStopGraceSec/);
-  assert.match(handler, /generating && !watchdogForceRefresh/);
-  assert.match(handler, /action === "watchdog"[\s\S]{0,180}generationWatchdogStopGraceSec/);
+  assert.match(handler, /workflowRecoveryRefresh/);
+  assert.match(handler, /generating && !workflowRecoveryRefresh/);
+  assert.match(source, /action === "workflow-recovery-refresh"/);
 });

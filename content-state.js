@@ -33,8 +33,7 @@
       continuesSent: 0,
       deepNudgesSent: 0,
       refreshesTriggered: 0,
-      queuedMessagesSent: 0,
-      generationRecoveries: 0
+      queuedMessagesSent: 0
     },
     runtime: null,
     lastAction: { message: "Idle", at: now(), level: "info", code: "idle" },
@@ -72,7 +71,7 @@
     return {
       sessionStartedAt: timestamp,
       sessionActionCount: 0,
-      history: { approval: [], recovery: [], nudge: [], refresh: [], queue: [], watchdog: [] },
+      history: { approval: [], recovery: [], nudge: [], refresh: [], queue: [] },
       approvalSignatures: [],
       lastActionAt: 0,
       lastUserActivityAt: timestamp,
@@ -81,16 +80,7 @@
       nextRefreshAt: 0,
       nextQueueAt: 0,
       lastErrorSignature: "",
-      lastErrorHandledAt: 0,
-      generationWatchdog: {
-        startedAt: 0,
-        lastProgressAt: 0,
-        lastAssistantFingerprint: "",
-        softWarnedAt: 0,
-        stopRequestedAt: 0,
-        stoppedAt: 0,
-        refreshRequestedAt: 0
-      }
+      lastErrorHandledAt: 0
     };
   }
 
@@ -130,22 +120,10 @@
         recovery: Config.pruneHistory(history.recovery),
         nudge: Config.pruneHistory(history.nudge),
         refresh: Config.pruneHistory(history.refresh),
-        queue: Config.pruneHistory(history.queue),
-        watchdog: Config.pruneHistory(history.watchdog)
+        queue: Config.pruneHistory(history.queue)
       },
       approvalSignatures: normalizeApprovalSignatures(raw?.approvalSignatures, lastActionAt),
-      nextQueueAt: Math.max(0, Number(raw?.nextQueueAt) || 0),
-      generationWatchdog: {
-        ...fallback.generationWatchdog,
-        ...(raw?.generationWatchdog && typeof raw.generationWatchdog === "object" ? raw.generationWatchdog : {}),
-        startedAt: Math.max(0, Number(raw?.generationWatchdog?.startedAt) || 0),
-        lastProgressAt: Math.max(0, Number(raw?.generationWatchdog?.lastProgressAt) || 0),
-        lastAssistantFingerprint: String(raw?.generationWatchdog?.lastAssistantFingerprint || "").slice(0, 180),
-        softWarnedAt: Math.max(0, Number(raw?.generationWatchdog?.softWarnedAt) || 0),
-        stopRequestedAt: Math.max(0, Number(raw?.generationWatchdog?.stopRequestedAt) || 0),
-        stoppedAt: Math.max(0, Number(raw?.generationWatchdog?.stoppedAt) || 0),
-        refreshRequestedAt: Math.max(0, Number(raw?.generationWatchdog?.refreshRequestedAt) || 0)
-      }
+      nextQueueAt: Math.max(0, Number(raw?.nextQueueAt) || 0)
     };
   }
 
@@ -195,8 +173,6 @@
       nudgeCountLastHour: Config.pruneHistory(history.nudge).length,
       refreshCountLastHour: Config.pruneHistory(history.refresh).length,
       queueCountLastHour: Config.pruneHistory(history.queue).length,
-      watchdogCountLastHour: Config.pruneHistory(history.watchdog).length,
-      generationWatchdog: { ...(state.runtime?.generationWatchdog || {}) },
       nextRefreshAt: state.runtime?.nextRefreshAt || 0,
       nextQueueAt: state.runtime?.nextQueueAt || 0,
       blockedReason: state.blockedReason,
