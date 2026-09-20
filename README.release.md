@@ -30,6 +30,9 @@ Then load `dist/yolo` as an unpacked extension.
 - Use `/rollover` to hand off the current task into a fresh ChatGPT conversation without manual copy/paste.
 - Enable automatic conversation rollover in Advanced settings for newly started Goal/Loop workflows.
 - The stuck-generation watchdog is enabled by default with conservative 5/10/30 minute thresholds and can be tuned in Advanced -> Safety & engine.
+- Delivered Goal/Loop prompts also have a 3-minute response-start watchdog so a request that never begins generating cannot wait forever.
+- Protected running workflows use background heartbeats and safe tab replacement to recover from a fully unresponsive ChatGPT renderer without replaying the original prompt.
+- The extension UI is Chinese-first; machine control markers and slash command names remain unchanged for compatibility.
 - Visit the extension options page to adjust profiles, limits, and recovery behavior.
 
 ## Privacy

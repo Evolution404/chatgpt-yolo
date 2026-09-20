@@ -69,8 +69,8 @@ test("options page fails closed when no saved conversation exists", async () => 
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(harness.queried(), true);
   assert.equal(harness.templatesRequested(), true);
-  assert.match(harness.getElement("#scope").textContent, /Open a saved ChatGPT conversation/);
-  assert.match(harness.getElement("#saveStatus").textContent, /No saved conversation selected/);
+  assert.match(harness.getElement("#scope").textContent, /请打开一个已保存的 ChatGPT 对话/);
+  assert.match(harness.getElement("#saveStatus").textContent, /未选择已保存的对话/);
 });
 
 test("options skips transient chats and selects the most recent durable conversation", async () => {
@@ -87,5 +87,5 @@ test("options skips transient chats and selects the most recent durable conversa
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(harness.templatesRequested(), true);
   assert.equal(harness.getElement("#scope").textContent, "ChatGPT · https://chatgpt.com/c/saved");
-  assert.equal(harness.getElement("#saveStatus").textContent, "Saved");
+  assert.equal(harness.getElement("#saveStatus").textContent, "已保存");
 });

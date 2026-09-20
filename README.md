@@ -57,6 +57,9 @@ The extension runs entirely in your browser. YOLO's settings, queues, templates,
 - Optional automatic rollover for newly started Goal/Loop workflows after a bounded number of chat-local turns, with a task-wide conversation cap.
 - Browser-restart recovery for in-flight rollover transactions without weakening the existing fail-closed send model.
 - Stuck-generation watchdog: warns after 5 minutes without assistant progress, requests Stop after 10 minutes, enforces a 30-minute absolute generation cap, and resumes from partial work instead of replaying the original prompt.
+- Response-start watchdog: if a delivered Goal/Loop prompt never starts producing a response, YOLO refreshes once after 3 minutes and then blocks rather than waiting forever.
+- Frozen-renderer recovery: protected running workflows emit persistent heartbeats; when a ChatGPT renderer becomes unresponsive at a safe response boundary, YOLO can replace the stuck tab with the same durable conversation and let the new runtime adopt the workflow without resending the original prompt.
+- Chinese-first extension UI across popup, Advanced settings, onboarding, command palette, workflow status, queue feedback, templates, diagnostics, and recovery notices.
 - `/plan`, `/review`, `/fix`, `/handoff`, and `/continue` prompt shortcuts.
 - `/status`, `/pause`, `/resume`, `/stop`, `/settings`, and `/help` extension controls.
 - Command palette from `/` in an empty composer or `Cmd/Ctrl + Shift + P`.

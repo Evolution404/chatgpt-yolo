@@ -167,15 +167,15 @@
     const lastBegin = source.lastIndexOf(HANDOFF_BEGIN);
     const firstEnd = source.indexOf(HANDOFF_END);
     const lastEnd = source.lastIndexOf(HANDOFF_END);
-    if (firstBegin < 0 || firstEnd < 0) return { ok: false, code: "rollover.handoff_missing", reason: "Rollover handoff markers are missing" };
+    if (firstBegin < 0 || firstEnd < 0) return { ok: false, code: "rollover.handoff_missing", reason: "缺少切换对话交接标记" };
     if (firstBegin !== lastBegin || firstEnd !== lastEnd || firstEnd <= firstBegin) {
-      return { ok: false, code: "rollover.handoff_ambiguous", reason: "Rollover handoff must contain exactly one complete envelope" };
+      return { ok: false, code: "rollover.handoff_ambiguous", reason: "切换对话交接内容必须且只能包含一个完整封装" };
     }
     const handoff = source.slice(firstBegin, firstEnd + HANDOFF_END.length).trim();
-    if (handoff.length > MAX_HANDOFF_LENGTH) return { ok: false, code: "rollover.handoff_too_large", reason: "Rollover handoff exceeds the local safety limit" };
+    if (handoff.length > MAX_HANDOFF_LENGTH) return { ok: false, code: "rollover.handoff_too_large", reason: "切换对话交接内容超过本地安全长度限制" };
     const missing = REQUIRED_FIELDS.filter((field) => !new RegExp(`(?:^|\\n)${field}:`, "m").test(handoff));
     if (missing.length) {
-      return { ok: false, code: "rollover.handoff_incomplete", reason: `Rollover handoff is missing required fields: ${missing.join(", ")}`, missing };
+      return { ok: false, code: "rollover.handoff_incomplete", reason: `切换对话交接内容缺少必填字段：${missing.join(", ")}`, missing };
     }
     return { ok: true, handoff, fingerprint: Commands.fingerprint(handoff) };
   }
@@ -201,20 +201,20 @@
   function autoRolloverBoundary(rawWorkflow) {
     const workflow = Commands.normalizeWorkflow(rawWorkflow);
     if (workflow.status === "idle" || !workflow.autoRolloverEnabled) {
-      return { action: "none", reason: "Automatic rollover is disabled" };
+      return { action: "none", reason: "自动切换对话已关闭" };
     }
     if (workflow.iteration < workflow.autoRolloverAfterTurns) {
-      return { action: "none", reason: "Current conversation is below the rollover turn threshold" };
+      return { action: "none", reason: "当前对话尚未达到自动切换回合阈值" };
     }
     if (workflow.conversationIndex >= workflow.autoRolloverMaxConversations) {
       return {
         action: "cap",
-        reason: `Reached the ${workflow.autoRolloverMaxConversations}-conversation rollover safety limit`
+        reason: `已达到 ${workflow.autoRolloverMaxConversations} 个对话的切换安全上限`
       };
     }
     return {
       action: "rollover",
-      reason: `Reached ${workflow.autoRolloverAfterTurns} completed workflow turns in chat ${workflow.conversationIndex}`
+      reason: `第 ${workflow.conversationIndex} 个对话已完成 ${workflow.autoRolloverAfterTurns} 个工作流回合`
     };
   }
 
@@ -234,7 +234,7 @@
       handoffPromptFingerprint: Commands.fingerprint(prompt),
       baselineAssistantFingerprint,
       lastPromptAt: at,
-      reason: "Handoff prompt queued",
+      reason: "交接提示已加入队列",
       createdAt: at,
       updatedAt: at
     }, at);
@@ -248,10 +248,10 @@
   function acceptHandoff(rawTransaction, responseText, { userFingerprint = "", at = Date.now() } = {}) {
     const current = normalizeTransaction(rawTransaction, at);
     if (current.phase !== "awaiting_handoff") {
-      return { ok: false, transaction: current, code: "rollover.not_waiting", reason: "Rollover is not awaiting a handoff response" };
+      return { ok: false, transaction: current, code: "rollover.not_waiting", reason: "当前切换事务并未等待交接回答" };
     }
     if (!current.handoffPromptFingerprint || userFingerprint !== current.handoffPromptFingerprint) {
-      return { ok: false, transaction: current, code: "rollover.ownership_lost", reason: "Conversation advanced outside the rollover handoff" };
+      return { ok: false, transaction: current, code: "rollover.ownership_lost", reason: "对话已在切换交接流程之外继续推进" };
     }
     const extracted = extractHandoff(responseText);
     if (!extracted.ok) return { ...extracted, transaction: current };
@@ -262,7 +262,7 @@
       handoffFingerprint: extracted.fingerprint,
       responseCandidateFingerprint: "",
       responseCandidateSince: 0,
-      reason: "Handoff captured; new-chat bootstrap pending",
+      reason: "已获取交接信息，等待启动新对话",
       updatedAt: at
     }, at);
     const prompt = bootstrapPrompt(staged);

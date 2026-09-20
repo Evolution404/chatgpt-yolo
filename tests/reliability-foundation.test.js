@@ -73,7 +73,7 @@ test('all automated text submissions use the durable queue', () => {
 test('workflow chrome dispatches the truthful stop action', () => {
   const ui = read('command-ui.js');
   const runtime = read('command-runtime.js');
-  assert.match(ui, /const clearButton = element\("button", "action", "Stop"\)/);
+  assert.match(ui, /const clearButton = element\("button", "action", "停止"\)/);
   assert.match(ui, /callbacks\.stop/);
   assert.match(runtime, /stop: \(\) => executeCommand\("stop"\)/);
   assert.doesNotMatch(runtime, /executeCommand\("clear"\)/);

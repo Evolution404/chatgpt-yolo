@@ -17,7 +17,7 @@ test("rollover source waits for exact queue completion before accepting a handof
   const body = source.slice(start, end);
   assert.match(body, /completion\.itemId === transaction\.pendingItemId && completion\.sourceId === transaction\.id/);
   assert.match(body, /phase: "awaiting_handoff"/);
-  assert.match(body, /handoff prompt disappeared before confirmed delivery/i);
+  assert.match(body, /rollover\.handoff_prompt_removed/);
 });
 
 test("bootstrap persists submitting intent before the only transient send", () => {

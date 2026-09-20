@@ -146,7 +146,7 @@
 
     const palette = element("section", "palette");
     palette.setAttribute("role", "dialog");
-    palette.setAttribute("aria-label", "YOLO command palette");
+    palette.setAttribute("aria-label", "YOLO 命令面板");
     palette.dataset.open = "false";
     const searchRow = element("div", "search-row");
     searchRow.appendChild(element("span", "slash", "/"));
@@ -154,14 +154,14 @@
     search.type = "text";
     search.autocomplete = "off";
     search.spellcheck = false;
-    search.setAttribute("aria-label", "Filter YOLO commands");
+    search.setAttribute("aria-label", "筛选 YOLO 命令");
     search.setAttribute("role", "combobox");
     search.setAttribute("aria-autocomplete", "list");
     search.setAttribute("aria-controls", "yolo-command-list");
     search.setAttribute("aria-expanded", "false");
-    search.placeholder = "Type a command";
+    search.placeholder = "输入命令";
     searchRow.appendChild(search);
-    searchRow.appendChild(element("span", "escape", "esc"));
+    searchRow.appendChild(element("span", "escape", "Esc"));
     palette.appendChild(searchRow);
     const feedback = element("div", "feedback");
     feedback.setAttribute("role", "status");
@@ -173,8 +173,8 @@
     list.setAttribute("role", "listbox");
     palette.appendChild(list);
     const footer = element("div", "footer");
-    footer.appendChild(element("span", "", "↑↓ navigate · enter select"));
-    footer.appendChild(element("span", "", "⌘⇧P commands"));
+    footer.appendChild(element("span", "", "↑↓ 选择 · Enter 确认"));
+    footer.appendChild(element("span", "", "⌘⇧P 打开命令"));
     palette.appendChild(footer);
     shadow.appendChild(palette);
 
@@ -189,9 +189,9 @@
     const workflowSub = element("div", "workflow-sub");
     workflowMain.append(workflowTop, workflowSub);
     const actions = element("div", "actions");
-    const pauseButton = element("button", "action", "Pause");
-    const editButton = element("button", "action", "Edit");
-    const clearButton = element("button", "action", "Stop");
+    const pauseButton = element("button", "action", "暂停");
+    const editButton = element("button", "action", "编辑");
+    const clearButton = element("button", "action", "停止");
     pauseButton.type = editButton.type = clearButton.type = "button";
     actions.append(pauseButton, editButton, clearButton);
     workflow.append(workflowMain, actions);
@@ -200,12 +200,12 @@
     const status = element("section", "status");
     status.dataset.open = "false";
     status.setAttribute("role", "dialog");
-    status.setAttribute("aria-label", "YOLO status");
+    status.setAttribute("aria-label", "YOLO 状态");
     const statusHead = element("div", "status-head");
-    statusHead.appendChild(element("div", "status-title", "YOLO status"));
+    statusHead.appendChild(element("div", "status-title", "YOLO 状态"));
     const statusClose = element("button", "close", "×");
     statusClose.type = "button";
-    statusClose.setAttribute("aria-label", "Close status");
+    statusClose.setAttribute("aria-label", "关闭状态窗口");
     statusHead.appendChild(statusClose);
     const statusBody = element("div", "status-body");
     status.append(statusHead, statusBody);
@@ -252,7 +252,7 @@
       selectedIndex = Math.max(0, Math.min(selectedIndex, results.length - 1));
       if (!results.length) {
         search.removeAttribute("aria-activedescendant");
-        list.appendChild(element("div", "empty", "No matching YOLO command"));
+        list.appendChild(element("div", "empty", "没有匹配的 YOLO 命令"));
         return;
       }
       const selectedId = `yolo-command-option-${results[selectedIndex].name}`;
@@ -268,7 +268,7 @@
         const meta = element("span", "meta");
         const title = element("div", "title", entry.title);
         const description = element("div", "description", argumentCommand
-          ? `${entry.description} ${entry.args ? `Expected: ${entry.args}` : ""}`.trim()
+          ? `${entry.description} ${entry.args ? `参数：${entry.args}` : ""}`.trim()
           : entry.description);
         meta.append(title, description);
         button.append(command, meta);
@@ -286,7 +286,7 @@
       feedback.textContent = "";
       feedback.dataset.visible = "false";
       search.value = "";
-      search.placeholder = "Type a command";
+      search.placeholder = "输入命令";
       selectedIndex = 0;
       renderList();
     }
@@ -299,7 +299,7 @@
       search.setAttribute("aria-expanded", "true");
       argumentCommand = null;
       search.value = String(initial || "").replace(/^\//, "");
-      search.placeholder = "Type a command";
+      search.placeholder = "输入命令";
       selectedIndex = 0;
       renderList();
       position();
@@ -331,7 +331,7 @@
       try {
         const result = await callbacks.execute(entry.name, args);
         if (!result?.ok) {
-          showFeedback(result?.reason || `/${entry.name} could not run`);
+          showFeedback(result?.reason || `/${entry.name} 无法执行`);
           if (originalComposerText) {
             callbacks.setComposerText(originalComposerText);
             callbacks.getComposer()?.focus?.();
@@ -341,7 +341,7 @@
         if (!result.keepOpen) closePalette({ restoreComposer: result.focusComposer !== false });
         return result;
       } catch (error) {
-        const reason = Shared.errorMessage(error) || `/${entry.name} failed`;
+        const reason = Shared.errorMessage(error) || `/${entry.name} 执行失败`;
         showFeedback(reason);
         if (originalComposerText) callbacks.setComposerText(originalComposerText);
         return { ok: false, reason };
@@ -384,9 +384,16 @@
       if (!visible) return;
       workflowBadge.textContent = currentWorkflow.kind;
       workflowTitle.textContent = currentWorkflow.objective;
-      const waiting = currentWorkflow.pendingItemId ? "queued" : (currentWorkflow.awaitingResponse ? "waiting for response" : currentWorkflow.status);
-      workflowSub.textContent = `${waiting} · iteration ${currentWorkflow.iteration}/${currentWorkflow.maxIterations}${currentWorkflow.reason ? ` · ${currentWorkflow.reason}` : ""}`;
-      pauseButton.textContent = ["paused", "blocked"].includes(currentWorkflow.status) ? "Resume" : "Pause";
+      const statusLabel = {
+        idle: "空闲",
+        running: "运行中",
+        paused: "已暂停",
+        completed: "已完成",
+        blocked: "已阻塞"
+      }[currentWorkflow.status] || currentWorkflow.status;
+      const waiting = currentWorkflow.pendingItemId ? "已加入队列" : (currentWorkflow.awaitingResponse ? "等待回答" : statusLabel);
+      workflowSub.textContent = `${waiting} · 第 ${currentWorkflow.iteration}/${currentWorkflow.maxIterations} 回合${currentWorkflow.reason ? ` · ${currentWorkflow.reason}` : ""}`;
+      pauseButton.textContent = ["paused", "blocked"].includes(currentWorkflow.status) ? "继续" : "暂停";
       const actionable = ["running", "paused", "blocked"].includes(currentWorkflow.status);
       pauseButton.disabled = workflowActionInFlight || !actionable;
       editButton.disabled = workflowActionInFlight || !actionable;

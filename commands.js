@@ -18,20 +18,20 @@
   const TERMINAL_MARKER_RE = /(?:^|\n)[ \t]*\[YOLO:(CONTINUE|DONE|BLOCKED|ROLLOVER)\][ \t]*$/i;
 
   const COMMANDS = Object.freeze([
-    Object.freeze({ name: "goal", title: "Goal", description: "Start a marker-driven objective that YOLO can continue for bounded turns.", args: "objective", group: "Automated workflows", kind: "workflow" }),
-    Object.freeze({ name: "loop", title: "Loop", description: "Run bounded, marker-driven iterations toward one objective.", args: "[iterations] objective", group: "Automated workflows", kind: "workflow" }),
-    Object.freeze({ name: "plan", title: "Plan", description: "Queue a prompt asking ChatGPT to produce an execution plan.", args: "objective", group: "Prompt shortcuts", kind: "prompt" }),
-    Object.freeze({ name: "review", title: "Review", description: "Queue an adversarial review prompt for the current work or scope.", args: "[scope]", group: "Prompt shortcuts", kind: "prompt" }),
-    Object.freeze({ name: "fix", title: "Fix", description: "Queue a prompt asking ChatGPT to diagnose, repair, and validate work.", args: "[scope]", group: "Prompt shortcuts", kind: "prompt" }),
-    Object.freeze({ name: "handoff", title: "Handoff", description: "Ask ChatGPT to write a continuation brief; this does not compact ChatGPT context.", args: "[focus]", group: "Prompt shortcuts", kind: "prompt" }),
-    Object.freeze({ name: "continue", title: "Continue", description: "Queue a prompt to continue the current task, optionally with a direction.", args: "[direction]", group: "Prompt shortcuts", kind: "prompt" }),
-    Object.freeze({ name: "rollover", title: "Rollover", description: "Create a strict handoff, start a new chat, and continue the current work there.", args: "[focus]", group: "Automated workflows", kind: "control" }),
-    Object.freeze({ name: "status", title: "Status", description: "Show YOLO workflow, queue, generation, limits, and last-action state.", args: "", group: "YOLO controls", kind: "control" }),
-    Object.freeze({ name: "pause", title: "Pause", description: "Pause the active YOLO goal or loop without deleting it.", args: "", group: "YOLO controls", kind: "control" }),
-    Object.freeze({ name: "resume", title: "Resume", description: "Resume the active paused or blocked YOLO workflow.", args: "", group: "YOLO controls", kind: "control" }),
-    Object.freeze({ name: "stop", title: "Stop", description: "Stop and clear the active YOLO goal or loop after confirmation.", args: "", group: "YOLO controls", kind: "control" }),
-    Object.freeze({ name: "settings", title: "Settings", description: "Open YOLO Advanced settings.", args: "", group: "YOLO controls", kind: "control" }),
-    Object.freeze({ name: "help", title: "Help", description: "Open the YOLO action palette and reference.", args: "", group: "YOLO controls", kind: "control" })
+    Object.freeze({ name: "goal", title: "持续目标", description: "启动由控制标记驱动、具有安全回合上限的持续目标。", args: "目标", group: "自动工作流", kind: "workflow" }),
+    Object.freeze({ name: "loop", title: "循环任务", description: "围绕同一目标执行有边界的多轮迭代。", args: "[回合数] 目标", group: "自动工作流", kind: "workflow" }),
+    Object.freeze({ name: "plan", title: "制定计划", description: "将“生成执行计划”的指令加入队列。", args: "目标", group: "快捷指令", kind: "prompt" }),
+    Object.freeze({ name: "review", title: "审查", description: "对当前工作或指定范围进行严格审查。", args: "[范围]", group: "快捷指令", kind: "prompt" }),
+    Object.freeze({ name: "fix", title: "修复", description: "让 ChatGPT 诊断、修复并验证当前工作。", args: "[范围]", group: "快捷指令", kind: "prompt" }),
+    Object.freeze({ name: "handoff", title: "交接", description: "生成供下一轮继续工作的交接摘要；不会压缩当前 ChatGPT 上下文。", args: "[重点]", group: "快捷指令", kind: "prompt" }),
+    Object.freeze({ name: "continue", title: "继续", description: "将继续当前任务的指令加入队列，可附带方向。", args: "[方向]", group: "快捷指令", kind: "prompt" }),
+    Object.freeze({ name: "rollover", title: "切换对话", description: "生成严格交接信息，创建新对话并继续当前工作。", args: "[重点]", group: "自动工作流", kind: "control" }),
+    Object.freeze({ name: "status", title: "状态", description: "查看 YOLO 工作流、队列、生成状态、限制和最近操作。", args: "", group: "YOLO 控制", kind: "control" }),
+    Object.freeze({ name: "pause", title: "暂停", description: "暂停当前持续目标或循环任务，但不删除。", args: "", group: "YOLO 控制", kind: "control" }),
+    Object.freeze({ name: "resume", title: "继续", description: "继续已暂停或已阻塞的 YOLO 工作流。", args: "", group: "YOLO 控制", kind: "control" }),
+    Object.freeze({ name: "stop", title: "停止", description: "确认后停止并清除当前持续目标或循环任务。", args: "", group: "YOLO 控制", kind: "control" }),
+    Object.freeze({ name: "settings", title: "设置", description: "打开 YOLO 高级设置。", args: "", group: "YOLO 控制", kind: "control" }),
+    Object.freeze({ name: "help", title: "帮助", description: "打开 YOLO 命令面板和命令说明。", args: "", group: "YOLO 控制", kind: "control" })
   ]);
 
   const COMMAND_BY_NAME = new Map(COMMANDS.map((command) => [command.name, command]));
@@ -120,6 +120,7 @@
       promptFingerprint: "",
       responseCandidateFingerprint: "",
       responseCandidateSince: 0,
+      responseStartRefreshAt: 0,
       runnerId: "",
       runnerExpiresAt: 0,
       lastPromptAt: 0,
@@ -168,6 +169,7 @@
       promptFingerprint: cleanText(raw.promptFingerprint, 180),
       responseCandidateFingerprint: Boolean(raw.awaitingResponse) ? cleanText(raw.responseCandidateFingerprint, 180) : "",
       responseCandidateSince: Boolean(raw.awaitingResponse) ? Math.max(0, finite(raw.responseCandidateSince, 0)) : 0,
+      responseStartRefreshAt: Boolean(raw.awaitingResponse) ? Math.max(0, finite(raw.responseStartRefreshAt, 0)) : 0,
       runnerId: status === "running" ? cleanText(raw.runnerId, 220) : "",
       runnerExpiresAt: status === "running" ? Math.max(0, finite(raw.runnerExpiresAt, 0)) : 0,
       lastPromptAt: Math.max(0, finite(raw.lastPromptAt, 0)),
@@ -179,9 +181,9 @@
   }
 
   function startWorkflow(kind, input, { at = Date.now(), baselineFingerprint = "", rolloverPolicy = null } = {}) {
-    if (!WORKFLOW_KINDS.has(kind)) return { ok: false, reason: "Unsupported workflow type" };
+    if (!WORKFLOW_KINDS.has(kind)) return { ok: false, reason: "不支持的工作流类型" };
     const parsed = kind === "loop" ? parseLoopArgs(input) : { objective: cleanText(input), maxIterations: MAX_ITERATIONS };
-    if (!parsed.objective) return { ok: false, reason: `/${kind} requires an objective` };
+    if (!parsed.objective) return { ok: false, reason: `/${kind} 需要填写目标` };
     return {
       ok: true,
       workflow: normalizeWorkflow({
@@ -217,6 +219,7 @@
       workflow.sawGeneration = false;
       workflow.responseCandidateFingerprint = "";
       workflow.responseCandidateSince = 0;
+      workflow.responseStartRefreshAt = 0;
       workflow.runnerId = "";
       workflow.runnerExpiresAt = 0;
     }
@@ -301,19 +304,19 @@
   function decideWorkflowResponse(raw, responseText, { userFingerprint = "", at = Date.now() } = {}) {
     const workflow = normalizeWorkflow(raw, at);
     if (workflow.status !== "running" || !workflow.awaitingResponse) {
-      return { workflow, action: "ignore", reason: "Workflow is not awaiting a response", code: "workflow.not_waiting" };
+      return { workflow, action: "ignore", reason: "当前工作流并未等待回答", code: "workflow.not_waiting" };
     }
     if (!workflow.promptFingerprint || userFingerprint !== workflow.promptFingerprint) {
       return {
         workflow,
         action: "paused",
-        reason: "Conversation advanced outside the active workflow",
+        reason: "对话已在当前工作流之外发生变化",
         code: "command.workflow.ownership_lost"
       };
     }
 
     const text = String(responseText || "").trim();
-    if (!text) return { workflow, action: "ignore", reason: "No assistant response is available", code: "workflow.response_missing" };
+    if (!text) return { workflow, action: "ignore", reason: "当前没有可用的助手回答", code: "workflow.response_missing" };
 
     workflow.awaitingResponse = false;
     workflow.sawGeneration = false;
@@ -327,26 +330,26 @@
     const outcome = evaluateResponse(text);
 
     if (outcome === "done") {
-      return { workflow, action: "completed", reason: "ChatGPT reported the objective complete", code: "command.workflow.completed" };
+      return { workflow, action: "completed", reason: "ChatGPT 已报告目标完成", code: "command.workflow.completed" };
     }
     if (outcome === "blocked") {
-      return { workflow, action: "blocked", reason: "ChatGPT requested user input or unavailable access", code: "command.workflow.blocked" };
+      return { workflow, action: "blocked", reason: "ChatGPT 需要用户输入或缺少必要访问权限", code: "command.workflow.blocked" };
     }
     if (outcome === "missing") {
-      const label = workflow.kind === "goal" ? "Goal" : "Loop";
+      const label = workflow.kind === "goal" ? "目标任务" : "循环任务";
       return {
         workflow,
         action: "paused",
-        reason: `${label} response omitted the required terminal control marker`,
+        reason: `${label} 的回答缺少必需的终止控制标记`,
         code: "command.workflow.marker_missing"
       };
     }
     if (outcome === "malformed") {
-      const label = workflow.kind === "goal" ? "Goal" : "Loop";
+      const label = workflow.kind === "goal" ? "目标任务" : "循环任务";
       return {
         workflow,
         action: "paused",
-        reason: `${label} response contained multiple or misplaced terminal control markers`,
+        reason: `${label} 的回答包含多个终止控制标记或标记位置错误`,
         code: "command.workflow.marker_malformed"
       };
     }
@@ -354,17 +357,17 @@
       return {
         workflow,
         action: "paused",
-        reason: `Reached the ${workflow.maxIterations}-iteration safety cap`,
+        reason: `已达到 ${workflow.maxIterations} 回合的安全上限`,
         code: "command.workflow.cap_reached"
       };
     }
     if (outcome === "rollover") {
       if (!workflow.autoRolloverEnabled) {
-        return { workflow, action: "paused", reason: "ChatGPT requested rollover but automatic rollover is disabled for this workflow", code: "command.workflow.rollover_disabled" };
+        return { workflow, action: "paused", reason: "ChatGPT 请求切换对话，但当前工作流未启用自动切换", code: "command.workflow.rollover_disabled" };
       }
-      return { workflow, action: "rollover", reason: "ChatGPT requested an early conversation rollover", code: "command.workflow.rollover" };
+      return { workflow, action: "rollover", reason: "ChatGPT 请求提前切换到新对话", code: "command.workflow.rollover" };
     }
-    return { workflow, action: "continue", reason: "Continue workflow", code: "command.workflow.continue" };
+    return { workflow, action: "continue", reason: "继续工作流", code: "command.workflow.continue" };
   }
 
   function oneShotPrompt(name, args = "") {

@@ -30,6 +30,7 @@ test("normalizes and clamps settings with interval invariants", () => {
 
 test("stuck generation watchdog defaults are conservative and enabled", () => {
   assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogEnabled, true);
+  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogResponseStartMin, 3);
   assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogSoftStallMin, 5);
   assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogHardStallMin, 10);
   assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogAbsoluteLimitMin, 30);

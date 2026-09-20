@@ -13,6 +13,7 @@ const queueLock = Shared.createLock();
 const workflowLock = Shared.createLock();
 const actionLock = Shared.createLock();
 const rolloverLock = Shared.createLock();
+const heartbeatLock = Shared.createLock();
 const MAX_CONVERSATION_QUEUES = 25;
 const MAX_ACTIVE_WORKFLOWS = 25;
 const MAX_RETAINED_COMPLETED_WORKFLOWS = 100;
@@ -21,6 +22,7 @@ const WORKFLOW_LEASE_MS = 2 * 60 * 1000;
 const WORKFLOW_RENEW_WINDOW_MS = 30 * 1000;
 const MAX_ACTIVE_ROLLOVERS = 25;
 const BROWSER_SESSION_KEY = "yoloBrowserSessionIdV1";
+const HEARTBEAT_RETENTION_MS = 15 * 60 * 1000;
 let browserSessionPromise = null;
 
 const storageGet = Shared.storageGet;
@@ -62,6 +64,34 @@ async function browserSessionId() {
   return browserSessionPromise;
 }
 
+async function handleTabHeartbeat(message, sender) {
+  const tabId = Number(sender?.tab?.id);
+  if (!Number.isInteger(tabId) || tabId < 0) {
+    return { ok: false, reason: "心跳缺少来源标签页", code: "heartbeat.tab_missing" };
+  }
+  const pageId = Config.pageId(message?.pageId || sender?.tab?.url || "");
+  if (!Config.isSupportedUrl(sender?.tab?.url || pageId)) {
+    return { ok: false, reason: "心跳来自不受支持的页面", code: "heartbeat.page_invalid" };
+  }
+  const timestamp = Date.now();
+  return withLock(heartbeatLock, async () => {
+    const stored = await sessionAreaCall("get", [Config.TAB_HEARTBEAT_SESSION_KEY]);
+    const current = stored?.[Config.TAB_HEARTBEAT_SESSION_KEY];
+    const map = current && typeof current === "object" ? { ...current } : {};
+    for (const [key, value] of Object.entries(map)) {
+      if (timestamp - (Number(value?.at) || 0) > HEARTBEAT_RETENTION_MS) delete map[key];
+    }
+    map[String(tabId)] = {
+      pageId,
+      at: timestamp,
+      visible: Boolean(message?.visible),
+      workflowActive: Boolean(message?.workflowActive)
+    };
+    await sessionAreaCall("set", { [Config.TAB_HEARTBEAT_SESSION_KEY]: map });
+    return { ok: true, at: timestamp };
+  });
+}
+
 async function readQueueMap() {
   const stored = await storageGet([Config.STORAGE_KEYS.queues]);
   const value = stored[Config.STORAGE_KEYS.queues];
@@ -87,7 +117,7 @@ function ensureQueueCapacity(map, pageId, current) {
   if (Object.keys(map).length < MAX_CONVERSATION_QUEUES) return null;
   return {
     ok: false,
-    reason: `Active queue limit of ${MAX_CONVERSATION_QUEUES} conversations reached; clear an old queue first`,
+    reason: `已达到 ${MAX_CONVERSATION_QUEUES} 个活动对话队列上限；请先清理旧队列`,
     code: "queue.conversation_limit",
     state: current,
     summary: Queue.summary(current)
@@ -134,14 +164,14 @@ async function readRolloverMap() {
 
 async function handleRolloverMessage(message, sender) {
   const tabId = senderTabId(sender);
-  if (tabId < 0) return { ok: false, reason: "A browser tab is required for rollover", code: "rollover.tab_invalid" };
+  if (tabId < 0) return { ok: false, reason: "切换对话需要有效的浏览器标签页", code: "rollover.tab_invalid" };
   const tabKey = String(tabId);
 
   if (message.type === "YOLO_ROLLOVER_START") {
     const pageId = message.pageId;
-    if (!validPageId(pageId)) return { ok: false, reason: "A saved ChatGPT conversation is required", code: "rollover.page_invalid" };
+    if (!validPageId(pageId)) return { ok: false, reason: "需要一个已保存的 ChatGPT 对话", code: "rollover.page_invalid" };
     if (!senderMatchesPageId(sender, pageId)) {
-      return { ok: false, reason: "Conversation identifier does not match the sending tab", code: "rollover.page_mismatch" };
+      return { ok: false, reason: "对话标识与发送消息的标签页不一致", code: "rollover.page_mismatch" };
     }
 
     return withLock(workflowLock, () => withLock(rolloverLock, () => withLock(queueLock, async () => {
@@ -159,7 +189,7 @@ async function handleRolloverMessage(message, sender) {
       }
       const activeCount = Object.values(rollovers).filter((entry) => entry.phase !== "bound").length;
       if (!existing && activeCount >= MAX_ACTIVE_ROLLOVERS) {
-        return { ok: false, reason: `Active rollover limit of ${MAX_ACTIVE_ROLLOVERS} tabs reached`, code: "rollover.capacity" };
+        return { ok: false, reason: `已达到 ${MAX_ACTIVE_ROLLOVERS} 个活动切换事务上限`, code: "rollover.capacity" };
       }
 
       let sourceWorkflow = Commands.normalizeWorkflow(message.sourceWorkflow);
@@ -171,7 +201,7 @@ async function handleRolloverMessage(message, sender) {
         const currentWorkflow = Commands.normalizeWorkflow(stored[workflowKey]);
         const expectedRevision = Math.max(0, Math.round(Number(message.workflowExpectedRevision) || 0));
         if (expectedRevision !== currentWorkflow.revision) {
-          return { ok: false, reason: "Workflow changed before rollover could consume the response", code: "rollover.workflow_conflict", workflow: currentWorkflow };
+          return { ok: false, reason: "切换流程处理回答前，工作流状态已发生变化", code: "rollover.workflow_conflict", workflow: currentWorkflow };
         }
         const identityMatches = currentWorkflow.status === "running"
           && currentWorkflow.awaitingResponse
@@ -184,7 +214,7 @@ async function handleRolloverMessage(message, sender) {
           && sourceWorkflow.iteration === currentWorkflow.iteration + 1
           && sourceWorkflow.totalIterations === currentWorkflow.totalIterations + 1;
         if (!identityMatches) {
-          return { ok: false, reason: "Workflow response state is not the exact next rollover boundary", code: "rollover.workflow_state_invalid", workflow: currentWorkflow };
+          return { ok: false, reason: "当前工作流回答状态不是可安全切换的下一边界", code: "rollover.workflow_state_invalid", workflow: currentWorkflow };
         }
         workflowToPersist = Commands.normalizeWorkflow({
           ...Commands.setWorkflowStatus(sourceWorkflow, "paused", "Paused for conversation rollover", Date.now()),
@@ -216,7 +246,7 @@ async function handleRolloverMessage(message, sender) {
 
       transaction = Rollover.withRevision(transaction, {
         pendingItemId: queueResult.item.id,
-        reason: "Handoff prompt queued"
+        reason: "交接提示已加入队列"
       });
       delete queueMap[pageId];
       queueMap[pageId] = queueResult.state;
@@ -259,7 +289,7 @@ async function handleRolloverMessage(message, sender) {
 
       if (!candidates.length) return { ok: true, transaction: null };
       if (candidates.length !== 1) {
-        return { ok: false, reason: "Multiple stale rollover transactions match this restored tab", code: "rollover.rebind_ambiguous" };
+        return { ok: false, reason: "有多个过期切换事务与恢复后的标签页匹配", code: "rollover.rebind_ambiguous" };
       }
 
       const [oldKey, stale] = candidates[0];
@@ -269,7 +299,7 @@ async function handleRolloverMessage(message, sender) {
         tabId,
         ownerId: String(message.ownerId || stale.ownerId || "").trim().slice(0, 220),
         browserSessionId: sessionId,
-        reason: "Recovered rollover after browser restart",
+        reason: "浏览器重启后已恢复切换事务",
         updatedAt: Date.now()
       });
       delete rollovers[oldKey];
@@ -278,23 +308,23 @@ async function handleRolloverMessage(message, sender) {
       current = rebound;
       return { ok: true, transaction: current, rebound: true };
     }
-    if (!current) return { ok: false, reason: "No rollover is active in this tab", code: "rollover.not_found" };
+    if (!current) return { ok: false, reason: "当前标签页没有活动的切换事务", code: "rollover.not_found" };
 
     if (message.type === "YOLO_ROLLOVER_UPDATE") {
       const expectedRevision = Math.max(0, Math.round(Number(message.expectedRevision) || 0));
       if (expectedRevision !== current.revision) {
-        return { ok: false, reason: "Rollover changed in another context", code: "rollover.conflict", transaction: current };
+        return { ok: false, reason: "切换事务已在其他上下文中发生变化", code: "rollover.conflict", transaction: current };
       }
       const requested = Rollover.normalizeTransaction(message.transaction);
       if (requested.id !== current.id
         || requested.sourcePageId !== current.sourcePageId
         || requested.tabId !== tabId
         || requested.browserSessionId !== current.browserSessionId) {
-        return { ok: false, reason: "Rollover identity cannot be changed", code: "rollover.identity_mismatch", transaction: current };
+        return { ok: false, reason: "不能更改切换事务标识", code: "rollover.identity_mismatch", transaction: current };
       }
       if (requested.targetPageId) {
         if (!validPageId(requested.targetPageId) || !senderMatchesPageId(sender, requested.targetPageId)) {
-          return { ok: false, reason: "Target conversation does not match the sending tab", code: "rollover.target_mismatch", transaction: current };
+          return { ok: false, reason: "目标对话与发送消息的标签页不一致", code: "rollover.target_mismatch", transaction: current };
         }
       }
       const transaction = Rollover.normalizeTransaction({ ...requested, revision: current.revision + 1, updatedAt: Date.now() });
@@ -310,7 +340,7 @@ async function handleRolloverMessage(message, sender) {
       return { ok: true, transaction: null };
     }
 
-    return { ok: false, reason: "Unknown rollover operation", code: "rollover.unknown" };
+    return { ok: false, reason: "未知的切换对话操作", code: "rollover.unknown" };
   });
 }
 
@@ -327,13 +357,13 @@ async function mutateActionGuards(mutator) {
 
 async function handleActionMessage(message, sender) {
   const pageId = message.pageId;
-  if (!validPageId(pageId)) return { ok: false, reason: "A saved ChatGPT conversation is required", code: "action.page_invalid" };
+  if (!validPageId(pageId)) return { ok: false, reason: "需要一个已保存的 ChatGPT 对话", code: "action.page_invalid" };
   if (!senderMatchesPageId(sender, pageId)) {
-    return { ok: false, reason: "Conversation identifier does not match the sending tab", code: "action.page_mismatch" };
+    return { ok: false, reason: "对话标识与发送消息的标签页不一致", code: "action.page_mismatch" };
   }
   const actionKey = String(message.actionKey || "").trim().slice(0, 240);
   if (message.type !== "YOLO_ACTION_RESET" && !actionKey) {
-    return { ok: false, reason: "Action key is required", code: "action.guard_invalid" };
+    return { ok: false, reason: "操作标识不能为空", code: "action.guard_invalid" };
   }
   const guardKey = `${pageId}::${actionKey}`;
   if (message.type === "YOLO_ACTION_CLAIM") {
@@ -356,7 +386,7 @@ async function handleActionMessage(message, sender) {
       ? Coordinator.reset(state, guardKey)
       : Coordinator.resetPrefix(state, `${pageId}::`));
   }
-  return { ok: false, reason: "Unknown action guard operation", code: "action.unknown" };
+  return { ok: false, reason: "未知的操作保护命令", code: "action.unknown" };
 }
 
 function normalizeTemplate(raw, fallbackId = "") {
@@ -400,27 +430,27 @@ function templateMutationPlan(message, stored) {
   }
   if (message.type === "YOLO_TEMPLATE_ADD") {
     const requestedId = String(message.template?.id || "").trim().slice(0, 180);
-    if (!requestedId) return { ok: false, reason: "Template identifier is required", code: "template.id_required" };
+    if (!requestedId) return { ok: false, reason: "模板标识不能为空", code: "template.id_required" };
     const existing = templates.find((template) => template.id === requestedId);
     if (existing) return { mutate: false, result: { templates, template: existing, deduplicated: true } };
-    if (templates.length >= 50) return { ok: false, reason: "Template limit reached", code: "template.limit" };
+    if (templates.length >= 50) return { ok: false, reason: "已达到模板数量上限", code: "template.limit" };
     const template = normalizeTemplate({ ...message.template, id: requestedId, createdAt: now, updatedAt: now });
-    if (!template) return { ok: false, reason: "Template name and text are required" };
+    if (!template) return { ok: false, reason: "模板名称和内容不能为空" };
     templates.push(template);
     return { setItems: { [Config.STORAGE_KEYS.templates]: templates }, result: { templates, template } };
   }
   if (message.type === "YOLO_TEMPLATE_UPDATE") {
     const requestedId = String(message.template?.id || "").trim().slice(0, 180);
     const index = templates.findIndex((template) => template.id === requestedId);
-    if (index < 0) return { ok: false, reason: "Template not found" };
+    if (index < 0) return { ok: false, reason: "未找到模板" };
     const template = normalizeTemplate({ ...templates[index], ...message.template, id: requestedId, builtIn: false, updatedAt: now });
-    if (!template) return { ok: false, reason: "Template name and text are required" };
+    if (!template) return { ok: false, reason: "模板名称和内容不能为空" };
     templates[index] = template;
     return { setItems: { [Config.STORAGE_KEYS.templates]: templates }, result: { templates, template } };
   }
   if (message.type === "YOLO_TEMPLATE_REMOVE") {
     const requestedId = String(message.templateId || "").trim().slice(0, 180);
-    if (!templates.some((entry) => entry.id === requestedId)) return { ok: false, reason: "Template not found" };
+    if (!templates.some((entry) => entry.id === requestedId)) return { ok: false, reason: "未找到模板" };
     templates = templates.filter((entry) => entry.id !== requestedId);
     return { setItems: { [Config.STORAGE_KEYS.templates]: templates }, result: { templates } };
   }
@@ -436,7 +466,7 @@ function templateMutationPlan(message, stored) {
     for (const template of templates) if (byId.has(template.id)) ordered.push(template);
     return { setItems: { [Config.STORAGE_KEYS.templates]: ordered }, result: { templates: ordered } };
   }
-  return { ok: false, reason: "Unknown template operation" };
+  return { ok: false, reason: "未知模板操作" };
 }
 
 async function handleTemplateMessage(message) {
@@ -458,7 +488,7 @@ async function activeWorkflowLimitError(key, current, workflow) {
   if (activeCount >= MAX_ACTIVE_WORKFLOWS) {
     return {
       ok: false,
-      reason: `Active workflow limit of ${MAX_ACTIVE_WORKFLOWS} conversations reached; pause or clear an old workflow first`,
+      reason: `已达到 ${MAX_ACTIVE_WORKFLOWS} 个活动工作流上限；请先暂停或清理旧工作流`,
       code: "workflow.conversation_limit",
       workflow: current
     };
@@ -541,7 +571,9 @@ async function completeQueueClaim(pageId, message) {
           sawGeneration: false,
           responseCandidateFingerprint: "",
           responseCandidateSince: 0,
-          reason: "Waiting for ChatGPT",
+          responseStartRefreshAt: 0,
+          lastPromptAt: Date.now(),
+          reason: "正在等待 ChatGPT",
           updatedAt: Date.now()
         });
         setItems[key] = workflow;
@@ -560,9 +592,9 @@ async function completeQueueClaim(pageId, message) {
 
 async function handleWorkflowMessage(message, sender) {
   const pageId = message.pageId;
-  if (!validPageId(pageId)) return { ok: false, reason: "Invalid conversation identifier", code: "workflow.page_invalid" };
+  if (!validPageId(pageId)) return { ok: false, reason: "无效的对话标识", code: "workflow.page_invalid" };
   if (!senderMatchesPageId(sender, pageId)) {
-    return { ok: false, reason: "Conversation identifier does not match the sending tab", code: "workflow.page_mismatch" };
+    return { ok: false, reason: "对话标识与发送消息的标签页不一致", code: "workflow.page_mismatch" };
   }
 
   return withLock(workflowLock, async () => {
@@ -575,7 +607,7 @@ async function handleWorkflowMessage(message, sender) {
     if (message.type === "YOLO_WORKFLOW_SET") {
       const expectedRevision = Math.max(0, Math.round(Number(message.expectedRevision) || 0));
       if (expectedRevision !== current.revision) {
-        return { ok: false, reason: "Workflow changed in another tab", code: "workflow.conflict", workflow: current };
+        return { ok: false, reason: "工作流已在另一个标签页发生变化", code: "workflow.conflict", workflow: current };
       }
       const workflow = Commands.normalizeWorkflow({ ...message.workflow, revision: current.revision + 1 });
       const limitError = await activeWorkflowLimitError(key, current, workflow);
@@ -587,7 +619,7 @@ async function handleWorkflowMessage(message, sender) {
     if (message.type === "YOLO_WORKFLOW_QUEUE_ADD") {
       const expectedRevision = Math.max(0, Math.round(Number(message.expectedRevision) || 0));
       if (expectedRevision !== current.revision) {
-        return { ok: false, reason: "Workflow changed in another tab", code: "workflow.conflict", workflow: current };
+        return { ok: false, reason: "工作流已在另一个标签页发生变化", code: "workflow.conflict", workflow: current };
       }
       return enqueueWorkflowPrompt(pageId, key, current, message);
     }
@@ -595,19 +627,19 @@ async function handleWorkflowMessage(message, sender) {
     if (message.type === "YOLO_WORKFLOW_CLEAR") {
       const expectedRevision = Math.max(0, Math.round(Number(message.expectedRevision) || 0));
       if (expectedRevision !== current.revision) {
-        return { ok: false, reason: "Workflow changed in another tab", code: "workflow.conflict", workflow: current };
+        return { ok: false, reason: "工作流已在另一个标签页发生变化", code: "workflow.conflict", workflow: current };
       }
       await storageRemove([key]);
       return { ok: true, workflow: Commands.freshWorkflow() };
     }
 
     if (message.type === "YOLO_WORKFLOW_CLAIM") {
-      if (current.status !== "running") return { ok: false, reason: "Workflow is not running", code: "workflow.not_running", workflow: current };
+      if (current.status !== "running") return { ok: false, reason: "工作流当前未运行", code: "workflow.not_running", workflow: current };
       const ownerId = String(message.ownerId || "").trim().slice(0, 220);
-      if (!ownerId) return { ok: false, reason: "Workflow runner identifier is required", code: "workflow.owner_invalid", workflow: current };
+      if (!ownerId) return { ok: false, reason: "工作流执行者标识不能为空", code: "workflow.owner_invalid", workflow: current };
       const timestamp = Date.now();
       if (current.runnerId && current.runnerId !== ownerId && current.runnerExpiresAt > timestamp) {
-        return { ok: false, reason: "Workflow is active in another tab", code: "workflow.busy", workflow: current };
+        return { ok: false, reason: "工作流正在另一个标签页运行", code: "workflow.busy", workflow: current };
       }
       if (current.runnerId === ownerId && current.runnerExpiresAt > timestamp + WORKFLOW_RENEW_WINDOW_MS) {
         return { ok: true, workflow: current, renewed: false };
@@ -637,15 +669,15 @@ async function handleWorkflowMessage(message, sender) {
       return { ok: true, workflow, released: true };
     }
 
-    return { ok: false, reason: "Unknown workflow operation" };
+    return { ok: false, reason: "未知工作流操作" };
   });
 }
 
 async function handleQueueMessage(message, sender) {
   const pageId = message.pageId;
-  if (!validPageId(pageId)) return { ok: false, reason: "Invalid conversation identifier", code: "queue.page_invalid" };
+  if (!validPageId(pageId)) return { ok: false, reason: "无效的对话标识", code: "queue.page_invalid" };
   if (!senderMatchesPageId(sender, pageId)) {
-    return { ok: false, reason: "Conversation identifier does not match the sending tab", code: "queue.page_mismatch" };
+    return { ok: false, reason: "对话标识与发送消息的标签页不一致", code: "queue.page_mismatch" };
   }
 
   if (message.type === "YOLO_QUEUE_GET") {
@@ -701,7 +733,7 @@ async function handleQueueMessage(message, sender) {
   if (message.type === "YOLO_EVENT_APPEND") {
     return mutateQueue(pageId, async (state) => ({ ok: true, state: Queue.appendEvent(state, message.event) }));
   }
-  return { ok: false, reason: "Unknown queue operation" };
+  return { ok: false, reason: "未知队列操作" };
 }
 
 chrome.runtime.onInstalled.addListener((details) => {
@@ -720,7 +752,9 @@ chrome.runtime.onInstalled.addListener((details) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message?.type?.startsWith("YOLO_")) return false;
-  const task = message.type.startsWith("YOLO_ACTION_")
+  const task = message.type === "YOLO_TAB_HEARTBEAT"
+    ? handleTabHeartbeat(message, sender)
+    : message.type.startsWith("YOLO_ACTION_")
     ? handleActionMessage(message, sender)
     : message.type.startsWith("YOLO_ROLLOVER_")
       ? handleRolloverMessage(message, sender)

@@ -7,6 +7,7 @@
 
   const VERSION = "1.2.0";
   const HOUR_MS = 60 * 60 * 1000;
+  const TAB_HEARTBEAT_SESSION_KEY = "yoloTabHeartbeatsV1";
   const STORAGE_KEYS = Object.freeze({
     global: "yoloGlobal",
     pages: "yoloPageSettings",
@@ -21,34 +22,34 @@
   });
 
   const DEEP_NUDGE_PROMPT = [
-    "Review where you stopped and keep going deeper.",
-    "Do not repeat the last answer.",
-    "Critically inspect your assumptions, look for gaps or edge cases, and continue the work toward my original goal with concrete next steps."
+    "回顾刚才停止的位置并继续深入推进。",
+    "不要重复上一条回答。",
+    "严格检查已有假设，查找缺口和边界情况，并围绕我的原始目标继续执行，给出具体下一步。"
   ].join(" ");
 
   const DEFAULT_TEMPLATES = Object.freeze([
     Object.freeze({
       id: "continue-deeper",
-      name: "Continue deeper",
+      name: "继续深入",
       text: DEEP_NUDGE_PROMPT,
       builtIn: true
     }),
     Object.freeze({
       id: "review-fix",
-      name: "Review and fix",
-      text: "Review the work completed so far from first principles. Find concrete defects, weak assumptions, missing edge cases, and unfinished parts. Fix what you can, validate the result, and continue toward the original goal without repeating prior commentary.",
+      name: "审查并修复",
+      text: "从第一性原理审查目前已完成的工作，找出明确缺陷、薄弱假设、遗漏的边界情况和未完成部分。修复能够解决的问题，验证结果，并继续推进原始目标，不要重复此前说明。",
       builtIn: true
     }),
     Object.freeze({
       id: "finish-task",
-      name: "Finish the task",
-      text: "Continue from the current state and finish the original task completely. Do not stop at a plan or partial result. Validate the final result and clearly surface any blocker that genuinely cannot be resolved.",
+      name: "完成任务",
+      text: "从当前状态继续，并完整完成原始任务。不要停留在计划或部分结果。验证最终结果，并明确指出确实无法解决的阻塞项。",
       builtIn: true
     }),
     Object.freeze({
       id: "progress-summary",
-      name: "Progress summary",
-      text: "Summarize the current state of the work: what is complete, what remains, the most important risks, and the exact next actions. Keep it concise and grounded in the actual work completed.",
+      name: "进度总结",
+      text: "总结当前工作状态：已完成内容、剩余内容、最重要的风险以及准确的下一步行动。保持简洁，并以实际已完成工作为依据。",
       builtIn: true
     })
   ]);
@@ -100,6 +101,7 @@
     autoRolloverAfterTurns: 12,
     autoRolloverMaxConversations: 10,
     generationWatchdogEnabled: true,
+    generationWatchdogResponseStartMin: 3,
     generationWatchdogSoftStallMin: 5,
     generationWatchdogHardStallMin: 10,
     generationWatchdogAbsoluteLimitMin: 30,
@@ -212,6 +214,7 @@
     autoRolloverAfterTurns: { type: "number", min: 2, max: 40, integer: true },
     autoRolloverMaxConversations: { type: "number", min: 2, max: 25, integer: true },
     generationWatchdogEnabled: { type: "boolean" },
+    generationWatchdogResponseStartMin: { type: "number", min: 1, max: 120, integer: false },
     generationWatchdogSoftStallMin: { type: "number", min: 1, max: 120, integer: false },
     generationWatchdogHardStallMin: { type: "number", min: 1, max: 240, integer: false },
     generationWatchdogAbsoluteLimitMin: { type: "number", min: 1, max: 720, integer: false },
@@ -360,12 +363,12 @@
   function limitStatus(history, perHourLimit, sessionActionCount, sessionLimit, at = Date.now()) {
     const recent = pruneHistory(history, at);
     if (sessionLimit > 0 && sessionActionCount >= sessionLimit) {
-      return { allowed: false, reason: "Session action limit reached", code: "limit.session", recent, nextAllowedAt: null };
+      return { allowed: false, reason: "已达到本次会话的自动操作上限", code: "limit.session", recent, nextAllowedAt: null };
     }
     if (perHourLimit > 0 && recent.length >= perHourLimit) {
       return {
         allowed: false,
-        reason: "Hourly action limit reached",
+        reason: "已达到滚动 1 小时的自动操作上限",
         code: "limit.hourly",
         recent,
         nextAllowedAt: recent[0] + HOUR_MS
@@ -375,13 +378,13 @@
   }
 
   function formatDuration(ms) {
-    if (!Number.isFinite(ms) || ms <= 0) return "now";
+    if (!Number.isFinite(ms) || ms <= 0) return "现在";
     const seconds = Math.ceil(ms / 1000);
-    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 60) return `${seconds} 秒`;
     const minutes = Math.ceil(seconds / 60);
-    if (minutes < 60) return `${minutes}m`;
+    if (minutes < 60) return `${minutes} 分钟`;
     const hours = Math.ceil(minutes / 60);
-    return `${hours}h`;
+    return `${hours} 小时`;
   }
 
   function renderTemplate(text, context = {}) {
@@ -389,8 +392,8 @@
     const values = {
       date: date.toLocaleDateString(),
       time: date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      platform: context.platform || "chat",
-      conversation: context.conversation || "current conversation"
+      platform: context.platform || "聊天",
+      conversation: context.conversation || "当前对话"
     };
     return String(text || "").replace(/\{\{\s*(date|time|platform|conversation)\s*\}\}/gi, (_match, key) => values[key.toLowerCase()]);
   }
@@ -398,6 +401,7 @@
   return Object.freeze({
     VERSION,
     HOUR_MS,
+    TAB_HEARTBEAT_SESSION_KEY,
     STORAGE_KEYS,
     DEFAULT_SETTINGS,
     DEFAULT_TEMPLATES,

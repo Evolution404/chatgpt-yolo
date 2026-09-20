@@ -11,12 +11,12 @@
 
   function importConfirmation(summary) {
     return [
-      "Import this YOLO backup?",
+      "导入这个 YOLO 备份吗？",
       "",
-      `${summary.conversations} conversation setting${summary.conversations === 1 ? "" : "s"}`,
-      `${summary.templates} template${summary.templates === 1 ? "" : "s"}`,
+      `${summary.conversations} 个对话设置`,
+      `${summary.templates} 个模板`,
       "",
-      "Active queues and goals will not be changed."
+      "正在运行的队列和工作流不会被修改。"
     ].join("\n");
   }
 
@@ -42,9 +42,9 @@
     const card = doc.createElement("div");
     card.className = "settings-card";
     const rows = [
-      ["Export backup", "Download settings and templates. Active queues and goals are excluded.", "exportBackup", "Export JSON"],
-      ["Import backup", "Validate and restore settings and templates without touching live automation.", "importBackup", "Choose file"],
-      ["Copy diagnostics", "Copy versions, feature state, counts, and error codes—never prompt or conversation text.", "copyDiagnostics", "Copy diagnostics"]
+      ["导出备份", "下载设置和模板，不包含正在运行的队列和工作流。", "exportBackup", "导出 JSON"],
+      ["导入备份", "验证并恢复设置和模板，不影响正在运行的自动化。", "importBackup", "选择文件"],
+      ["复制诊断信息", "复制版本、功能状态、计数和错误代码，不包含提示词或对话正文。", "copyDiagnostics", "复制诊断信息"]
     ];
 
     for (const [title, description, id, label] of rows) {
@@ -155,40 +155,40 @@
       textarea.select();
       const copied = Boolean(doc.execCommand?.("copy"));
       textarea.remove();
-      if (!copied) throw new Error("Clipboard access is unavailable");
+      if (!copied) throw new Error("剪贴板不可用");
     }
 
     async function exportBackup() {
       if (busy) return;
       await setBusy(true);
-      setStatus("Preparing backup…");
+      setStatus("正在准备备份…");
       try {
         const response = await backgroundSend({ type: "YOLODATA_EXPORT" });
-        if (!response?.ok) throw new Error(response?.reason || "Could not export YOLO data");
+        if (!response?.ok) throw new Error(response?.reason || "无法导出 YOLO 数据");
         downloadJson(response.backup);
-        setStatus(`Backup downloaded · ${response.summary.conversations} conversations · ${response.summary.templates} templates`, "success");
+        setStatus(`备份已下载 · ${response.summary.conversations} 个对话 · ${response.summary.templates} 个模板`, "success");
       } catch (error) { setStatus(Shared.errorMessage(error), "error"); }
       finally { await setBusy(false); }
     }
 
     async function importBackup(file) {
       if (!file || busy) return;
-      if (file.size > Portability.MAX_BACKUP_BYTES) return setStatus("Backup file exceeds 1 MiB", "error");
+      if (file.size > Portability.MAX_BACKUP_BYTES) return setStatus("备份文件超过 1 MiB", "error");
       let applied = false;
       await setBusy(true);
-      setStatus("Validating backup…");
+      setStatus("正在验证备份…");
       try {
         const text = await file.text();
         const normalized = Portability.normalizeBackup(text);
         const preview = await backgroundSend({ type: "YOLODATA_IMPORT_PREVIEW", backup: text });
-        if (!preview?.ok) throw new Error(preview?.reason || "Backup validation failed");
-        if (!win.confirm(importConfirmation(preview.summary))) return setStatus("Import cancelled");
+        if (!preview?.ok) throw new Error(preview?.reason || "备份验证失败");
+        if (!win.confirm(importConfirmation(preview.summary))) return setStatus("已取消导入");
         const response = await backgroundSend({
           type: "YOLODATA_IMPORT_APPLY",
           backup: text,
           previewToken: preview.previewToken
         });
-        if (!response?.ok) throw new Error(response?.reason || "Could not import YOLO data");
+        if (!response?.ok) throw new Error(response?.reason || "无法导入 YOLO 数据");
         applied = true;
 
         const { sourceTabId, pageId } = currentContext();
@@ -198,12 +198,12 @@
           const effectiveSettings = Portability.effectiveSettings(normalized, currentPageId);
           const synced = await contentSend({ type: "YOLO_APPLY_IMPORTED_SETTINGS", settings: effectiveSettings });
           if (!synced?.ok) {
-            setStatus("Backup imported. Refresh the ChatGPT tab if its restored settings do not appear. This page will reload.", "warning");
+            setStatus("备份已导入。如果恢复后的设置未出现在 ChatGPT 标签页，请刷新该标签页。本页面即将重新加载。", "warning");
             win.setTimeout(() => win.location.reload(), 1400);
             return;
           }
         }
-        setStatus(`Imported ${response.summary.conversations} conversations and ${response.summary.templates} templates`, "success");
+        setStatus(`已导入 ${response.summary.conversations} 个对话和 ${response.summary.templates} 个模板`, "success");
         win.setTimeout(() => win.location.reload(), 650);
       } catch (error) { setStatus(Shared.errorMessage(error), "error"); }
       finally {
@@ -215,7 +215,7 @@
     async function copyDiagnostics() {
       if (busy) return;
       await setBusy(true);
-      setStatus("Preparing privacy-safe diagnostics…");
+      setStatus("正在准备隐私安全诊断信息…");
       try {
         const { pageId } = currentContext();
         const [contentState, queueResponse] = await Promise.all([
@@ -228,7 +228,7 @@
           browser: win.navigator?.userAgent || "unknown"
         });
         await copyText(JSON.stringify(diagnostics, null, 2));
-        setStatus("Privacy-safe diagnostics copied", "success");
+        setStatus("隐私安全诊断信息已复制", "success");
       } catch (error) { setStatus(Shared.errorMessage(error), "error"); }
       finally { await setBusy(false); }
     }

@@ -1,198 +1,199 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>YOLO Advanced Settings</title>
+    <title>YOLO 高级设置</title>
     <link rel="stylesheet" href="theme.css">
     <link rel="stylesheet" href="options.css">
   </head>
   <body>
     <div class="settings-app">
-      <aside class="settings-sidebar" aria-label="YOLO settings navigation">
+      <aside class="settings-sidebar" aria-label="YOLO 设置导航">
         <div class="sidebar-brand">
           <span class="brand-mark" aria-hidden="true">Y</span>
-          <div><strong>YOLO</strong><span>Control center</span></div>
+          <div><strong>YOLO</strong><span>控制中心</span></div>
         </div>
 
         <label class="settings-search">
-          <span class="sr-only">Search settings</span>
+          <span class="sr-only">搜索设置</span>
           <span class="search-icon" aria-hidden="true">⌕</span>
-          <input id="settingsSearch" type="search" autocomplete="off" placeholder="Search settings…">
-          <button id="clearSearch" type="button" aria-label="Clear settings search" hidden>×</button>
+          <input id="settingsSearch" type="search" autocomplete="off" placeholder="搜索设置…">
+          <button id="clearSearch" type="button" aria-label="清除设置搜索" hidden>×</button>
         </label>
 
-        <nav class="section-nav" aria-label="Settings sections">
-          <button type="button" data-section-link="overview" aria-current="page"><span aria-hidden="true">◉</span>Overview</button>
-          <button type="button" data-section-link="queue"><span aria-hidden="true">≡</span>Queue</button>
-          <button type="button" data-section-link="approvals"><span aria-hidden="true">✓</span>Approvals</button>
-          <button type="button" data-section-link="recovery"><span aria-hidden="true">↻</span>Recovery</button>
-          <button type="button" data-section-link="nudges"><span aria-hidden="true">↗</span>Nudges</button>
-          <button type="button" data-section-link="refresh"><span aria-hidden="true">⟳</span>Refresh</button>
-          <button type="button" data-section-link="safety"><span aria-hidden="true">◇</span>Safety</button>
-          <button type="button" data-section-link="templates"><span aria-hidden="true">▤</span>Templates</button>
-          <button type="button" data-section-link="data"><span aria-hidden="true">•••</span>Data &amp; resets</button>
+        <nav class="section-nav" aria-label="设置分区">
+          <button type="button" data-section-link="overview" aria-current="page"><span aria-hidden="true">◉</span>概览</button>
+          <button type="button" data-section-link="queue"><span aria-hidden="true">≡</span>队列</button>
+          <button type="button" data-section-link="approvals"><span aria-hidden="true">✓</span>授权确认</button>
+          <button type="button" data-section-link="recovery"><span aria-hidden="true">↻</span>错误恢复</button>
+          <button type="button" data-section-link="nudges"><span aria-hidden="true">↗</span>续作提醒</button>
+          <button type="button" data-section-link="refresh"><span aria-hidden="true">⟳</span>页面刷新</button>
+          <button type="button" data-section-link="safety"><span aria-hidden="true">◇</span>安全</button>
+          <button type="button" data-section-link="templates"><span aria-hidden="true">▤</span>模板</button>
+          <button type="button" data-section-link="data"><span aria-hidden="true">•••</span>数据与重置</button>
         </nav>
 
         <div class="sidebar-footer">
-          <span id="sectionCount" aria-live="polite">9 sections</span>
-          <span>Local only</span>
+          <span id="sectionCount" aria-live="polite">9 个分区</span>
+          <span>仅本地</span>
         </div>
       </aside>
 
       <main class="settings-workspace">
         <header class="workspace-header">
           <div class="workspace-heading">
-            <p class="eyebrow">ADVANCED SETTINGS</p>
-            <h1>Automation controls</h1>
-            <p id="scope" title="">Loading conversation…</p>
+            <p class="eyebrow">高级设置</p>
+            <h1>自动化控制</h1>
+            <p id="scope" title="">正在加载对话…</p>
           </div>
           <div class="save-state">
             <span class="save-dot" aria-hidden="true"></span>
-            <span id="saveStatus" role="status" aria-live="polite">Loading…</span>
+            <span id="saveStatus" role="status" aria-live="polite">加载中…</span>
           </div>
         </header>
 
         <div id="searchEmpty" class="search-empty" role="status" hidden>
-          <strong>No settings found</strong>
-          <span>Try a broader term such as “delay”, “queue”, or “limit”.</span>
+          <strong>未找到设置</strong>
+          <span>请尝试“延迟”“队列”或“限制”等更宽泛的关键词。</span>
         </div>
 
         <section id="overview" class="settings-section overview-section" data-settings-section data-search-text="overview profile preset automation master switch enabled mode">
           <header class="section-header">
-            <div><p class="section-eyebrow">CURRENT CONVERSATION</p><h2>Overview</h2><p>Choose an operating profile, then fine-tune individual behavior below.</p></div>
+            <div><p class="section-eyebrow">当前对话</p><h2>概览</h2><p>先选择运行模式，再在下方微调各项行为。</p></div>
           </header>
           <div class="overview-grid">
             <label class="overview-control">
-              <span class="control-copy"><strong>Operating profile</strong><small>Safe is conservative, Balanced is the default, and Fast shortens queue timing.</small></span>
+              <span class="control-copy"><strong>运行模式</strong><small>“安全”更保守，“均衡”为默认，“快速”会缩短队列等待时间。</small></span>
               <select data-setting="profile" data-kind="string" id="profile">
-                <option value="safe">Safe</option>
-                <option value="balanced">Balanced</option>
-                <option value="fast">Fast</option>
-                <option value="custom">Custom</option>
+                <option value="safe">安全</option>
+                <option value="balanced">均衡</option>
+                <option value="fast">快速</option>
+                <option value="custom">自定义</option>
               </select>
             </label>
             <label class="overview-control">
-              <span class="control-copy"><strong>Run automation</strong><small>Master switch for every automatic action in this conversation.</small></span>
-              <input data-setting="enabled" data-kind="boolean" type="checkbox" role="switch" aria-label="Run automation">
+              <span class="control-copy"><strong>运行自动化</strong><small>当前对话所有自动操作的总开关。</small></span>
+              <input data-setting="enabled" data-kind="boolean" type="checkbox" role="switch" aria-label="运行自动化">
             </label>
           </div>
-          <div class="profile-note"><span aria-hidden="true">i</span><p>Editing any detailed control changes the profile to <strong>Custom</strong>. Your settings save automatically.</p></div>
+          <div class="profile-note"><span aria-hidden="true">i</span><p>修改任一详细设置后，模式会变为<strong>自定义</strong>。设置会自动保存。</p></div>
         </section>
 
         <section id="queue" class="settings-section" data-settings-section data-search-text="queue messages delivery interval idle hourly limit retry backoff pause failure auto run">
           <header class="section-header">
-            <div><p class="section-eyebrow">DELIVERY</p><h2>Queue</h2><p>Control when queued messages send, retry, and stop after failures.</p></div>
-            <label class="section-switch"><span>Auto-run</span><input data-setting="queueAutoRunEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="Enable queue auto-run"></label>
+            <div><p class="section-eyebrow">消息发送</p><h2>队列</h2><p>控制队列消息何时发送、何时重试以及失败后何时停止。</p></div>
+            <label class="section-switch"><span>自动运行</span><input data-setting="queueAutoRunEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="启用队列自动运行"></label>
           </header>
           <div class="settings-card">
-            <div class="setting-row"><span class="control-copy"><strong>Send interval</strong><small>Random wait between successful queued sends.</small></span><div class="range-controls"><label><span>Minimum</span><div class="number-control"><input data-setting="queueIntervalMinSec" data-kind="number" type="number" min="0" step="1"><em>sec</em></div></label><label><span>Maximum</span><div class="number-control"><input data-setting="queueIntervalMaxSec" data-kind="number" type="number" min="0" step="1"><em>sec</em></div></label></div></div>
-            <label class="setting-row"><span class="control-copy"><strong>Idle before send</strong><small>How long ChatGPT must remain idle before the next message.</small></span><div class="number-control"><input data-setting="queueIdleSec" data-kind="number" type="number" min="0" step="1"><em>sec</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Hourly limit</strong><small>Maximum automatic queue deliveries during a rolling hour.</small></span><div class="number-control"><input data-setting="queueLimitPerHour" data-kind="number" type="number" min="0" step="1"><em>messages</em></div></label>
+            <div class="setting-row"><span class="control-copy"><strong>发送间隔</strong><small>两次成功发送之间的随机等待时间。</small></span><div class="range-controls"><label><span>最小</span><div class="number-control"><input data-setting="queueIntervalMinSec" data-kind="number" type="number" min="0" step="1"><em>秒</em></div></label><label><span>最大</span><div class="number-control"><input data-setting="queueIntervalMaxSec" data-kind="number" type="number" min="0" step="1"><em>秒</em></div></label></div></div>
+            <label class="setting-row"><span class="control-copy"><strong>发送前空闲时间</strong><small>发送下一条消息前，ChatGPT 必须保持空闲的时间。</small></span><div class="number-control"><input data-setting="queueIdleSec" data-kind="number" type="number" min="0" step="1"><em>秒</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>每小时限制</strong><small>滚动 1 小时内最多自动发送的队列消息数。</small></span><div class="number-control"><input data-setting="queueLimitPerHour" data-kind="number" type="number" min="0" step="1"><em>条</em></div></label>
           </div>
           <div class="settings-card">
-            <label class="setting-row"><span class="control-copy"><strong>Automatic retries</strong><small>Retry safe pre-submit failures before stopping.</small></span><div class="number-control"><input data-setting="queueMaxRetries" data-kind="number" type="number" min="0" step="1"><em>retries</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Retry backoff</strong><small>Wait before retrying a failed delivery.</small></span><div class="number-control"><input data-setting="queueRetryBackoffSec" data-kind="number" type="number" min="1" step="1"><em>sec</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Pause after final failure</strong><small>Stop instead of continuing past a permanently failed message.</small></span><input data-setting="queuePauseOnFailure" data-kind="boolean" type="checkbox" role="switch" aria-label="Pause queue after final failure"></label>
+            <label class="setting-row"><span class="control-copy"><strong>自动重试</strong><small>遇到确认未提交的安全失败时自动重试。</small></span><div class="number-control"><input data-setting="queueMaxRetries" data-kind="number" type="number" min="0" step="1"><em>次</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>重试退避</strong><small>发送失败后再次重试前的等待时间。</small></span><div class="number-control"><input data-setting="queueRetryBackoffSec" data-kind="number" type="number" min="1" step="1"><em>秒</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>最终失败后暂停</strong><small>消息最终失败后暂停，而不是继续越过该消息。</small></span><input data-setting="queuePauseOnFailure" data-kind="boolean" type="checkbox" role="switch" aria-label="最终失败后暂停队列"></label>
           </div>
         </section>
 
         <section id="approvals" class="settings-section" data-settings-section data-search-text="approval permission policy safe writes destructive delay cooldown hourly limit">
           <header class="section-header">
-            <div><p class="section-eyebrow">EXTERNAL APPROVALS</p><h2>Approvals</h2><p>Explicit opt-in for accepting action cards shown by ChatGPT. Keep this off unless you understand the risk.</p></div>
-            <label class="section-switch"><span>Enabled</span><input data-setting="approvalsEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="Enable approvals"></label>
+            <div><p class="section-eyebrow">外部授权确认</p><h2>授权确认</h2><p>显式允许自动点击 ChatGPT 展示的操作确认卡片。除非清楚风险，否则建议保持关闭。</p></div>
+            <label class="section-switch"><span>启用</span><input data-setting="approvalsEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="启用授权确认"></label>
           </header>
           <div class="settings-card">
-            <label class="setting-row stacked"><span class="control-copy"><strong>Approval policy</strong><small>Safe accepts only non-sensitive confirmations. Writes also accepts file or repository write prompts presented by ChatGPT. All additionally permits sensitive permissions and destructive actions.</small></span><select data-setting="approvalPolicy" data-kind="string"><option value="safe">Non-sensitive confirmations only</option><option value="writes">Include file or repository write prompts</option><option value="all">Include sensitive and destructive actions</option></select></label>
-            <div class="setting-row"><span class="control-copy"><strong>Approval delay</strong><small>Random pause before re-checking and clicking the card.</small></span><div class="range-controls"><label><span>Minimum</span><div class="number-control"><input data-setting="approvalDelayMinSec" data-kind="number" type="number" min="0" step="0.5"><em>sec</em></div></label><label><span>Maximum</span><div class="number-control"><input data-setting="approvalDelayMaxSec" data-kind="number" type="number" min="0" step="0.5"><em>sec</em></div></label></div></div>
-            <label class="setting-row"><span class="control-copy"><strong>Cooldown</strong><small>Minimum time between approval actions.</small></span><div class="number-control"><input data-setting="approvalCooldownSec" data-kind="number" type="number" min="0" step="1"><em>sec</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Hourly limit</strong><small>Maximum approval actions during a rolling hour.</small></span><div class="number-control"><input data-setting="approvalLimitPerHour" data-kind="number" type="number" min="0" step="1"><em>actions</em></div></label>
+            <label class="setting-row stacked"><span class="control-copy"><strong>授权策略</strong><small>“安全”仅接受非敏感确认；“写入”还允许文件或仓库写入确认；“全部”还允许敏感权限和破坏性操作。</small></span><select data-setting="approvalPolicy" data-kind="string"><option value="safe">仅非敏感确认</option><option value="writes">包括文件或仓库写入确认</option><option value="all">包括敏感和破坏性操作</option></select></label>
+            <div class="setting-row"><span class="control-copy"><strong>确认延迟</strong><small>重新检查并点击确认卡片前的随机等待时间。</small></span><div class="range-controls"><label><span>最小</span><div class="number-control"><input data-setting="approvalDelayMinSec" data-kind="number" type="number" min="0" step="0.5"><em>秒</em></div></label><label><span>最大</span><div class="number-control"><input data-setting="approvalDelayMaxSec" data-kind="number" type="number" min="0" step="0.5"><em>秒</em></div></label></div></div>
+            <label class="setting-row"><span class="control-copy"><strong>冷却时间</strong><small>两次授权确认操作之间的最短时间。</small></span><div class="number-control"><input data-setting="approvalCooldownSec" data-kind="number" type="number" min="0" step="1"><em>秒</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>每小时限制</strong><small>滚动 1 小时内最多执行的授权确认次数。</small></span><div class="number-control"><input data-setting="approvalLimitPerHour" data-kind="number" type="number" min="0" step="1"><em>次</em></div></label>
           </div>
         </section>
 
         <section id="recovery" class="settings-section" data-settings-section data-search-text="error recovery continue refresh strategy delay cooldown hourly limit failure">
           <header class="section-header">
-            <div><p class="section-eyebrow">FAILURE HANDLING</p><h2>Error recovery</h2><p>Define how YOLO responds when a conversation reports an error.</p></div>
-            <label class="section-switch"><span>Enabled</span><input data-setting="errorRecoveryEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="Enable recovery"></label>
+            <div><p class="section-eyebrow">故障处理</p><h2>错误恢复</h2><p>定义对话出现错误时 YOLO 的恢复方式。</p></div>
+            <label class="section-switch"><span>启用</span><input data-setting="errorRecoveryEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="启用错误恢复"></label>
           </header>
           <div class="settings-card">
-            <label class="setting-row stacked"><span class="control-copy"><strong>Recovery strategy</strong><small>Order Continue and page refresh attempts.</small></span><select data-setting="errorRecoveryStrategy" data-kind="string"><option value="continue-first">Continue, then refresh</option><option value="refresh-first">Refresh, then Continue</option><option value="continue-only">Continue only</option><option value="refresh-only">Refresh only</option></select></label>
-            <div class="setting-row"><span class="control-copy"><strong>Recovery delay</strong><small>Random pause before acting on the detected error.</small></span><div class="range-controls"><label><span>Minimum</span><div class="number-control"><input data-setting="errorDelayMinSec" data-kind="number" type="number" min="0" step="0.5"><em>sec</em></div></label><label><span>Maximum</span><div class="number-control"><input data-setting="errorDelayMaxSec" data-kind="number" type="number" min="0" step="0.5"><em>sec</em></div></label></div></div>
-            <label class="setting-row"><span class="control-copy"><strong>Cooldown</strong><small>Minimum time between recovery attempts.</small></span><div class="number-control"><input data-setting="errorCooldownSec" data-kind="number" type="number" min="0" step="1"><em>sec</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Hourly limit</strong><small>Maximum recovery actions during a rolling hour.</small></span><div class="number-control"><input data-setting="errorLimitPerHour" data-kind="number" type="number" min="0" step="1"><em>actions</em></div></label>
+            <label class="setting-row stacked"><span class="control-copy"><strong>恢复策略</strong><small>设置“继续”与页面刷新的尝试顺序。</small></span><select data-setting="errorRecoveryStrategy" data-kind="string"><option value="continue-first">先继续，再刷新</option><option value="refresh-first">先刷新，再继续</option><option value="continue-only">仅继续</option><option value="refresh-only">仅刷新</option></select></label>
+            <div class="setting-row"><span class="control-copy"><strong>恢复延迟</strong><small>检测到错误后执行恢复动作前的随机等待时间。</small></span><div class="range-controls"><label><span>最小</span><div class="number-control"><input data-setting="errorDelayMinSec" data-kind="number" type="number" min="0" step="0.5"><em>秒</em></div></label><label><span>最大</span><div class="number-control"><input data-setting="errorDelayMaxSec" data-kind="number" type="number" min="0" step="0.5"><em>秒</em></div></label></div></div>
+            <label class="setting-row"><span class="control-copy"><strong>冷却时间</strong><small>两次恢复尝试之间的最短时间。</small></span><div class="number-control"><input data-setting="errorCooldownSec" data-kind="number" type="number" min="0" step="1"><em>秒</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>每小时限制</strong><small>滚动 1 小时内最多执行的恢复操作次数。</small></span><div class="number-control"><input data-setting="errorLimitPerHour" data-kind="number" type="number" min="0" step="1"><em>次</em></div></label>
           </div>
         </section>
 
         <section id="nudges" class="settings-section" data-settings-section data-search-text="deep nudges prompt idle cooldown hourly limit continue work">
           <header class="section-header">
-            <div><p class="section-eyebrow">CONTINUATION</p><h2>Deep nudges</h2><p>Prompt ChatGPT to continue useful work after it becomes idle.</p></div>
-            <label class="section-switch"><span>Enabled</span><input data-setting="deepNudgesEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="Enable nudges"></label>
+            <div><p class="section-eyebrow">续作</p><h2>续作提醒</h2><p>ChatGPT 空闲后提示其继续推进有效工作。</p></div>
+            <label class="section-switch"><span>启用</span><input data-setting="deepNudgesEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="启用续作提醒"></label>
           </header>
           <div class="settings-card">
-            <label class="setting-row"><span class="control-copy"><strong>Idle before nudge</strong><small>Required quiet time before sending the prompt.</small></span><div class="number-control"><input data-setting="deepNudgeIdleSec" data-kind="number" type="number" min="5" step="5"><em>sec</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Cooldown</strong><small>Minimum time between nudges.</small></span><div class="number-control"><input data-setting="deepNudgeCooldownSec" data-kind="number" type="number" min="5" step="5"><em>sec</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Hourly limit</strong><small>Maximum nudges during a rolling hour.</small></span><div class="number-control"><input data-setting="deepNudgeLimitPerHour" data-kind="number" type="number" min="0" step="1"><em>actions</em></div></label>
-            <label class="setting-row stacked"><span class="control-copy"><strong>Nudge prompt</strong><small>The instruction inserted when ChatGPT is idle.</small></span><textarea data-setting="deepNudgePrompt" data-kind="string" rows="6" maxlength="4000"></textarea></label>
+            <label class="setting-row"><span class="control-copy"><strong>提醒前空闲时间</strong><small>发送续作提示前需要保持空闲的时间。</small></span><div class="number-control"><input data-setting="deepNudgeIdleSec" data-kind="number" type="number" min="5" step="5"><em>秒</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>冷却时间</strong><small>两次续作提醒之间的最短时间。</small></span><div class="number-control"><input data-setting="deepNudgeCooldownSec" data-kind="number" type="number" min="5" step="5"><em>秒</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>每小时限制</strong><small>滚动 1 小时内最多发送的续作提醒次数。</small></span><div class="number-control"><input data-setting="deepNudgeLimitPerHour" data-kind="number" type="number" min="0" step="1"><em>次</em></div></label>
+            <label class="setting-row stacked"><span class="control-copy"><strong>续作提示词</strong><small>ChatGPT 空闲时插入的指令。</small></span><textarea data-setting="deepNudgePrompt" data-kind="string" rows="6" maxlength="4000"></textarea></label>
           </div>
         </section>
 
         <section id="refresh" class="settings-section" data-settings-section data-search-text="idle refresh stale conversation required idle cooldown interval hourly limit">
           <header class="section-header">
-            <div><p class="section-eyebrow">STALE CONVERSATIONS</p><h2>Idle refresh</h2><p>Recover heavy conversations without interrupting active work.</p></div>
-            <label class="section-switch"><span>Enabled</span><input data-setting="autoRefreshEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="Enable refresh"></label>
+            <div><p class="section-eyebrow">停滞对话</p><h2>空闲刷新</h2><p>在不中断正在执行任务的前提下恢复卡顿的长对话。</p></div>
+            <label class="section-switch"><span>启用</span><input data-setting="autoRefreshEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="启用页面刷新"></label>
           </header>
           <div class="settings-card">
-            <label class="setting-row"><span class="control-copy"><strong>Required idle</strong><small>How long the conversation must be quiet first.</small></span><div class="number-control"><input data-setting="refreshIdleMin" data-kind="number" type="number" min="0" step="0.5"><em>min</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Cooldown</strong><small>Minimum time between page refreshes.</small></span><div class="number-control"><input data-setting="refreshCooldownMin" data-kind="number" type="number" min="0" step="0.5"><em>min</em></div></label>
-            <div class="setting-row"><span class="control-copy"><strong>Refresh interval</strong><small>Random schedule used while the page remains stale.</small></span><div class="range-controls"><label><span>Minimum</span><div class="number-control"><input data-setting="refreshIntervalMinMin" data-kind="number" type="number" min="0.25" step="0.25"><em>min</em></div></label><label><span>Maximum</span><div class="number-control"><input data-setting="refreshIntervalMaxMin" data-kind="number" type="number" min="0.25" step="0.25"><em>min</em></div></label></div></div>
-            <label class="setting-row"><span class="control-copy"><strong>Hourly limit</strong><small>Maximum refreshes during a rolling hour.</small></span><div class="number-control"><input data-setting="refreshLimitPerHour" data-kind="number" type="number" min="0" step="1"><em>refreshes</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>所需空闲时间</strong><small>刷新前对话必须保持空闲的时间。</small></span><div class="number-control"><input data-setting="refreshIdleMin" data-kind="number" type="number" min="0" step="0.5"><em>分钟</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>冷却时间</strong><small>两次页面刷新之间的最短时间。</small></span><div class="number-control"><input data-setting="refreshCooldownMin" data-kind="number" type="number" min="0" step="0.5"><em>分钟</em></div></label>
+            <div class="setting-row"><span class="control-copy"><strong>刷新间隔</strong><small>页面持续停滞时使用的随机刷新间隔。</small></span><div class="range-controls"><label><span>最小</span><div class="number-control"><input data-setting="refreshIntervalMinMin" data-kind="number" type="number" min="0.25" step="0.25"><em>分钟</em></div></label><label><span>最大</span><div class="number-control"><input data-setting="refreshIntervalMaxMin" data-kind="number" type="number" min="0.25" step="0.25"><em>分钟</em></div></label></div></div>
+            <label class="setting-row"><span class="control-copy"><strong>每小时限制</strong><small>滚动 1 小时内最多自动刷新的次数。</small></span><div class="number-control"><input data-setting="refreshLimitPerHour" data-kind="number" type="number" min="0" step="1"><em>次</em></div></label>
           </div>
         </section>
 
         <section id="safety" class="settings-section" data-settings-section data-search-text="safety engine load grace scan interval session action limit composer draft protection tabs memory saver overnight workflow">
-          <header class="section-header"><div><p class="section-eyebrow">GUARDRAILS</p><h2>Safety &amp; engine</h2><p>Global timing and input protections for the selected conversation.</p></div></header>
+          <header class="section-header"><div><p class="section-eyebrow">安全边界</p><h2>安全与引擎</h2><p>当前对话的全局时序与输入保护设置。</p></div></header>
           <div class="settings-card">
-            <label class="setting-row"><span class="control-copy"><strong>Page-load grace</strong><small>Wait after navigation before automation begins scanning.</small></span><div class="number-control"><input data-setting="loadGraceSec" data-kind="number" type="number" min="0" step="1"><em>sec</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Scan interval</strong><small>Visible-tab baseline. Hidden and generating tabs automatically back off further.</small></span><div class="number-control"><input data-setting="scanIntervalSec" data-kind="number" type="number" min="1" step="1"><em>sec</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Protect active workflows</strong><small>Keep running Goal/Loop tabs out of Chrome Memory Saver. Disable this when memory pressure matters more than uninterrupted overnight work.</small></span><input data-setting="protectActiveWorkflowTabs" data-kind="boolean" type="checkbox" role="switch" aria-label="Protect active workflow tabs from automatic discard"></label>
-            <label class="setting-row"><span class="control-copy"><strong>Automatic conversation rollover</strong><small>For newly started Goal/Loop workflows, hand off to a fresh ChatGPT conversation before the current conversation becomes too long.</small></span><input data-setting="autoRolloverEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="Enable automatic conversation rollover"></label>
-            <label class="setting-row"><span class="control-copy"><strong>Turns before rollover</strong><small>After this many completed workflow turns in one conversation, generate a strict handoff instead of sending the next Continue prompt.</small></span><div class="number-control"><input data-setting="autoRolloverAfterTurns" data-kind="number" type="number" min="2" max="40" step="1"><em>turns</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Conversation limit</strong><small>Maximum conversations in one long-running workflow task. Reaching the limit pauses instead of creating another chat.</small></span><div class="number-control"><input data-setting="autoRolloverMaxConversations" data-kind="number" type="number" min="2" max="25" step="1"><em>chats</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Stuck-generation watchdog</strong><small>Detect a response that remains generating without observable assistant output progress and recover without resending the original prompt.</small></span><input data-setting="generationWatchdogEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="Enable stuck generation watchdog"></label>
-            <label class="setting-row"><span class="control-copy"><strong>Soft stall warning</strong><small>Warn after this long with no assistant output change. No recovery action is taken yet.</small></span><div class="number-control"><input data-setting="generationWatchdogSoftStallMin" data-kind="number" type="number" min="1" max="120" step="1"><em>min</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Hard stall recovery</strong><small>Request Stop generating after this long with no assistant output change.</small></span><div class="number-control"><input data-setting="generationWatchdogHardStallMin" data-kind="number" type="number" min="1" max="240" step="1"><em>min</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Absolute generation limit</strong><small>Recover even if output is still changing when one response runs longer than this.</small></span><div class="number-control"><input data-setting="generationWatchdogAbsoluteLimitMin" data-kind="number" type="number" min="1" max="720" step="1"><em>min</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Stop confirmation grace</strong><small>If ChatGPT still reports generating after Stop is requested, refresh the current chat after this delay.</small></span><div class="number-control"><input data-setting="generationWatchdogStopGraceSec" data-kind="number" type="number" min="5" max="300" step="5"><em>sec</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Watchdog hourly limit</strong><small>Maximum automatic Stop/refresh recovery actions during a rolling hour.</small></span><div class="number-control"><input data-setting="generationWatchdogLimitPerHour" data-kind="number" type="number" min="0" max="100" step="1"><em>actions</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Session action limit</strong><small>Hard cap across automatic actions until runtime history is reset.</small></span><div class="number-control"><input data-setting="maxActionsPerSession" data-kind="number" type="number" min="0" step="1"><em>actions</em></div></label>
-            <label class="setting-row"><span class="control-copy"><strong>Protect composer drafts</strong><small>Always on. YOLO never replaces text already typed into ChatGPT.</small></span><input data-setting="pauseOnComposerText" data-kind="boolean" type="checkbox" role="switch" aria-label="Composer draft protection is always enabled" checked disabled></label>
+            <label class="setting-row"><span class="control-copy"><strong>页面加载宽限</strong><small>页面跳转后等待一段时间再开始自动扫描。</small></span><div class="number-control"><input data-setting="loadGraceSec" data-kind="number" type="number" min="0" step="1"><em>秒</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>扫描间隔</strong><small>前台标签页的基础扫描间隔；后台或生成中的标签页会自动降低扫描频率。</small></span><div class="number-control"><input data-setting="scanIntervalSec" data-kind="number" type="number" min="1" step="1"><em>秒</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>保护运行中的工作流</strong><small>避免运行中的 /goal 或 /loop 标签页被 Chrome 内存节省程序丢弃。若内存压力优先于持续运行，可关闭。</small></span><input data-setting="protectActiveWorkflowTabs" data-kind="boolean" type="checkbox" role="switch" aria-label="防止运行中的工作流标签页被自动丢弃"></label>
+            <label class="setting-row"><span class="control-copy"><strong>自动切换对话</strong><small>对于新启动的 /goal 或 /loop 工作流，在当前对话过长前自动交接到新的 ChatGPT 对话。</small></span><input data-setting="autoRolloverEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="启用自动切换对话"></label>
+            <label class="setting-row"><span class="control-copy"><strong>切换前回合数</strong><small>同一对话完成指定工作流回合数后，生成严格交接信息，而不是发送下一条“继续”提示。</small></span><div class="number-control"><input data-setting="autoRolloverAfterTurns" data-kind="number" type="number" min="2" max="40" step="1"><em>回合</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>对话数量上限</strong><small>单个长期任务最多使用的对话数量；达到上限后暂停，不再创建新对话。</small></span><div class="number-control"><input data-setting="autoRolloverMaxConversations" data-kind="number" type="number" min="2" max="25" step="1"><em>个对话</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>生成卡死监控</strong><small>检测长时间处于生成状态但没有可观察输出进展的回答，并在不重发原始提示词的情况下恢复。</small></span><input data-setting="generationWatchdogEnabled" data-kind="boolean" type="checkbox" role="switch" aria-label="启用生成卡死监控"></label>
+            <label class="setting-row"><span class="control-copy"><strong>回答启动超时</strong><small>工作流提示已确认送达后，如果 ChatGPT 在这段时间内既未开始生成也未出现新回答，则自动刷新当前对话一次；刷新后再次超时会暂停工作流。</small></span><div class="number-control"><input data-setting="generationWatchdogResponseStartMin" data-kind="number" type="number" min="1" max="120" step="1"><em>分钟</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>软卡顿告警</strong><small>助手输出在指定时间内无变化时告警，但暂不执行恢复操作。</small></span><div class="number-control"><input data-setting="generationWatchdogSoftStallMin" data-kind="number" type="number" min="1" max="120" step="1"><em>分钟</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>硬卡顿恢复</strong><small>助手输出长时间无变化后请求停止生成。</small></span><div class="number-control"><input data-setting="generationWatchdogHardStallMin" data-kind="number" type="number" min="1" max="240" step="1"><em>分钟</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>单次生成绝对上限</strong><small>即使输出仍有变化，单次回答超过该时长后也执行恢复。</small></span><div class="number-control"><input data-setting="generationWatchdogAbsoluteLimitMin" data-kind="number" type="number" min="1" max="720" step="1"><em>分钟</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>停止确认宽限</strong><small>请求停止后若 ChatGPT 仍显示生成中，则等待该时长后刷新当前对话。</small></span><div class="number-control"><input data-setting="generationWatchdogStopGraceSec" data-kind="number" type="number" min="5" max="300" step="5"><em>秒</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>监控每小时限制</strong><small>滚动 1 小时内最多自动执行的停止/刷新恢复次数。</small></span><div class="number-control"><input data-setting="generationWatchdogLimitPerHour" data-kind="number" type="number" min="0" max="100" step="1"><em>次</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>会话操作上限</strong><small>在运行时历史被重置前，所有自动操作的硬性总上限。</small></span><div class="number-control"><input data-setting="maxActionsPerSession" data-kind="number" type="number" min="0" step="1"><em>次</em></div></label>
+            <label class="setting-row"><span class="control-copy"><strong>保护输入框草稿</strong><small>始终开启。YOLO 绝不会覆盖你已在 ChatGPT 输入框中输入的内容。</small></span><input data-setting="pauseOnComposerText" data-kind="boolean" type="checkbox" role="switch" aria-label="输入框草稿保护始终开启" checked disabled></label>
           </div>
         </section>
 
         <section id="templates" class="settings-section templates-section" data-settings-section data-search-text="templates reusable message date time platform conversation create edit delete restore defaults">
           <header class="section-header">
-            <div><p class="section-eyebrow">REUSABLE INSTRUCTIONS</p><h2>Templates</h2><p>Build reusable queue messages with <code>{{date}}</code>, <code>{{time}}</code>, <code>{{platform}}</code>, and <code>{{conversation}}</code>.</p></div>
-            <button id="resetTemplates" class="secondary-button" type="button">Restore defaults</button>
+            <div><p class="section-eyebrow">可复用指令</p><h2>模板</h2><p>可使用 <code>{{date}}</code>、<code>{{time}}</code>、<code>{{platform}}</code> 和 <code>{{conversation}}</code> 变量创建可复用消息。</p></div>
+            <button id="resetTemplates" class="secondary-button" type="button">恢复默认</button>
           </header>
           <div class="template-workspace">
             <div class="template-editor">
-              <label><span>Template name</span><input id="templateName" type="text" maxlength="80" placeholder="Review and fix"></label>
-              <label><span>Message</span><textarea id="templateText" rows="7" maxlength="8000" placeholder="Review the work deeply, fix every valid issue, and validate again."></textarea></label>
-              <div class="template-editor-actions"><button id="saveTemplate" class="primary-button" type="button">Add template</button><button id="cancelTemplate" class="secondary-button" type="button" hidden>Cancel edit</button></div>
+              <label><span>模板名称</span><input id="templateName" type="text" maxlength="80" placeholder="审查并修复"></label>
+              <label><span>消息</span><textarea id="templateText" rows="7" maxlength="8000" placeholder="深入审查当前工作，修复所有有效问题，然后再次验证。"></textarea></label>
+              <div class="template-editor-actions"><button id="saveTemplate" class="primary-button" type="button">添加模板</button><button id="cancelTemplate" class="secondary-button" type="button" hidden>取消编辑</button></div>
               <p id="templateStatus" role="status" aria-live="polite"></p>
             </div>
             <div class="template-library">
-              <div class="library-heading"><strong>Saved templates</strong><span>Available in every conversation</span></div>
+              <div class="library-heading"><strong>已保存模板</strong><span>所有对话均可使用</span></div>
               <ol id="templateList" class="template-list"></ol>
             </div>
           </div>
         </section>
 
         <section id="data" class="settings-section" data-settings-section data-search-text="data reset defaults runtime history session limits danger restore">
-          <header class="section-header"><div><p class="section-eyebrow">MAINTENANCE</p><h2>Data &amp; resets</h2><p>Restore configuration or clear volatile runtime counters without deleting queue content.</p></div></header>
+          <header class="section-header"><div><p class="section-eyebrow">维护</p><h2>数据与重置</h2><p>恢复配置或清除临时运行计数，不删除队列内容。</p></div></header>
           <div class="settings-card danger-card">
-            <div class="setting-row"><span class="control-copy"><strong>Reset session history</strong><small>Clear action counters, cooldown history, and runtime state for this conversation.</small></span><button id="resetRuntime" class="secondary-button" type="button">Reset runtime</button></div>
-            <div class="setting-row"><span class="control-copy"><strong>Restore default settings</strong><small>Reset every automation setting while preserving the current master on/off state.</small></span><button id="resetDefaults" class="danger-button" type="button">Restore defaults</button></div>
+            <div class="setting-row"><span class="control-copy"><strong>重置会话历史</strong><small>清除当前对话的操作计数、冷却历史和运行状态。</small></span><button id="resetRuntime" class="secondary-button" type="button">重置运行状态</button></div>
+            <div class="setting-row"><span class="control-copy"><strong>恢复默认设置</strong><small>重置所有自动化设置，但保留当前总开关状态。</small></span><button id="resetDefaults" class="danger-button" type="button">恢复默认</button></div>
           </div>
         </section>
       </main>

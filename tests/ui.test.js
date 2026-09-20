@@ -38,6 +38,40 @@ test("extension pages use external scripts only", () => {
   }
 });
 
+test("Chinese UI gate rejects legacy English user-facing copy", () => {
+  const pages = ["popup.html", "options.html", "onboarding.html"];
+  for (const name of pages) {
+    const html = read(name);
+    assert.match(html, /<html lang="zh-CN">/);
+    for (const phrase of [
+      "Advanced Settings",
+      "Current conversation",
+      "Run automation",
+      "No queued work",
+      "Getting started",
+      "Review settings",
+      "Data &amp; resets",
+      "Stuck-generation watchdog",
+      "Automatic conversation rollover"
+    ]) {
+      assert.doesNotMatch(html, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), `${name} still exposes legacy English UI: ${phrase}`);
+    }
+  }
+
+  const runtime = [read("content.js"), read("command-ui.js"), read("command-runtime.js")].join("\n");
+  for (const phrase of [
+    "Queue send failed:",
+    "Generation watchdog warning:",
+    "Refresh blocked:",
+    "Route synchronization failed:",
+    "Startup failed:",
+    "YOLO status",
+    "Type a command"
+  ]) {
+    assert.doesNotMatch(runtime, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), `runtime still exposes legacy English UI: ${phrase}`);
+  }
+});
+
 
 test("queue engine persists submission intent before touching the composer", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "content.js"), "utf8");
@@ -70,7 +104,7 @@ test("template rendering receives the current conversation", () => {
 });
 
 test("primary controls and dynamic option statuses are accessibly named", () => {
-  assert.match(read("popup.html"), /id="enabled"[^>]*aria-label="Run automation for this conversation"/);
+  assert.match(read("popup.html"), /id="enabled"[^>]*aria-label="为当前对话运行自动化"/);
   const options = read("options.html");
   assert.match(options, /id="saveStatus"[^>]*role="status"/);
   assert.match(options, /id="templateStatus"[^>]*role="status"/);
@@ -106,8 +140,8 @@ test("command workflows reuse the reliable queue and fail closed", () => {
   assert.match(runtime, /type: "YOLO_QUEUE_ADD"/);
   assert.match(runtime, /runAction\("queue-next"\)/);
   assert.match(runtime, /Commands\.decideWorkflowResponse/);
-  assert.match(commands, /response omitted the required terminal control marker/);
-  assert.match(commands, /Reached the \$\{workflow\.maxIterations\}-iteration safety cap/);
+  assert.match(commands, /required terminal control marker|终止控制标记/);
+  assert.match(commands, /已达到 \$\{workflow\.maxIterations\} 回合的安全上限/);
 });
 
 test("content exposes only a narrow lifecycle-safe command API", () => {
@@ -198,7 +232,7 @@ test("premium popup keeps one dominant action and progressive disclosure", () =>
   assert.match(popup, /class="compose-panel"/);
   assert.match(popup, /class="queue-panel"/);
   assert.match(popup, /class="activity-panel"/);
-  assert.match(popup, /id="advanced"[^>]*aria-label="Open Advanced settings"/);
+  assert.match(popup, /id="advanced"[^>]*aria-label="打开高级设置"/);
 });
 
 test("advanced settings has searchable persistent section navigation", () => {
@@ -273,11 +307,11 @@ test("settings navigation stays available during template operations", () => {
 
 test("destructive settings actions require confirmation and always report outcomes", () => {
   const source = read("options.js");
-  assert.match(source, /Delete this template\? This cannot be undone/);
-  assert.match(source, /Replace all templates with the built-in defaults/);
-  assert.match(source, /Restore every automation setting to its default value/);
-  assert.match(source, /Template deleted\./);
-  assert.match(source, /Could not restore default templates/);
+  assert.match(source, /确定删除此模板吗？此操作无法撤销/);
+  assert.match(source, /要用内置默认模板替换全部现有模板吗/);
+  assert.match(source, /确定将所有自动化设置恢复为默认值吗/);
+  assert.match(source, /模板已删除/);
+  assert.match(source, /无法恢复默认模板/);
 });
 
 test("slash actions expose only viable product semantics", () => {

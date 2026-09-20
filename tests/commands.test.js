@@ -158,7 +158,7 @@ test("workflow response decisions enforce ownership, markers, and caps", () => {
     at: 1200
   });
   assert.equal(capped.action, "paused");
-  assert.match(capped.reason, /safety cap/);
+  assert.match(capped.reason, /安全上限/);
 
   const done = Commands.decideWorkflowResponse(base, "complete\n[YOLO:DONE]", {
     userFingerprint: "owned",
@@ -291,6 +291,6 @@ test("both automated workflows pause on multiple or misplaced markers", () => {
     });
     assert.equal(decision.action, "paused");
     assert.equal(decision.code, "command.workflow.marker_malformed");
-    assert.match(decision.reason, /multiple or misplaced/i);
+    assert.match(decision.reason, /多个终止控制标记|标记位置错误/);
   }
 });

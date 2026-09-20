@@ -64,8 +64,8 @@ test("popup keeps settings and templates reachable on unsupported pages", async 
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "popup.js"), "utf8"), context, { filename: "popup.js" });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(queried, true);
-  assert.equal(getElement("#status").textContent, "Unavailable");
-  assert.match(getElement("#scope").textContent, /Settings and templates remain available/);
+  assert.equal(getElement("#status").textContent, "不可用");
+  assert.match(getElement("#scope").textContent, /设置和模板仍可使用/);
   assert.equal(getElement("#message").disabled, true);
   assert.equal(getElement("#advanced").disabled, false);
   assert.equal(getElement("#manageTemplates").disabled, false);

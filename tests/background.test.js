@@ -76,6 +76,23 @@ function loadBackground({ storage = {}, sessionStorage = {} } = {}) {
   return { invoke, storage, sessionStorage, failStorageWrite() { failNextSet = true; } };
 }
 
+test("tab heartbeat is persisted in session storage and bound to the sender tab", async () => {
+  const { invoke, sessionStorage } = loadBackground();
+  const pageId = "https://chatgpt.com/c/heartbeat";
+  const result = await invoke({
+    type: "YOLO_TAB_HEARTBEAT",
+    pageId,
+    visible: true,
+    workflowActive: true
+  }, { tab: { id: 55, url: pageId } });
+  assert.equal(result.ok, true);
+  const heartbeat = sessionStorage[Config.TAB_HEARTBEAT_SESSION_KEY]["55"];
+  assert.equal(heartbeat.pageId, pageId);
+  assert.equal(heartbeat.visible, true);
+  assert.equal(heartbeat.workflowActive, true);
+  assert.ok(heartbeat.at > 0);
+});
+
 test("rollover start atomically persists a tab-bound transaction and its handoff queue item", async () => {
   const { invoke, storage } = loadBackground();
   const pageId = "https://chatgpt.com/c/rollover-source";
