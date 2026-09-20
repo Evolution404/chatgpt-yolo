@@ -177,6 +177,18 @@ test("command UI handles blocked resume, IME, and shortcut scope safely", () => 
   assert.match(source, /workflowActionInFlight/);
 });
 
+test("workflow chrome exposes a live status window with countdown timers", () => {
+  const ui = read("command-ui.js");
+  const runtime = read("command-runtime.js");
+  assert.match(ui, /"状态"/);
+  assert.match(ui, /status-timer/);
+  assert.match(ui, /updateStatus/);
+  assert.match(ui, /下一动作/);
+  assert.match(runtime, /Lifecycle\.liveCountdowns/);
+  assert.match(runtime, /buildLiveStatus/);
+  assert.match(runtime, /formatCountdown/);
+});
+
 test("runtime uses the pure workflow response decision and completion ring", () => {
   const runtime = read("command-runtime.js");
   assert.match(runtime, /Commands\.decideWorkflowResponse/);

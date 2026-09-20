@@ -157,3 +157,117 @@ test("generation watchdog is inert when disabled or idle", () => {
   assert.equal(Lifecycle.generationWatchdogDecision({ enabled: false, generating: true, startedAt: 1, lastProgressAt: 1, now: 999999 }).action, "none");
   assert.equal(Lifecycle.generationWatchdogDecision({ enabled: true, generating: false, startedAt: 1, lastProgressAt: 1, now: 999999 }).action, "none");
 });
+
+test("live status countdowns expose response recovery and watchdog deadlines", () => {
+  const settings = {
+    generationWatchdogEnabled: true,
+    generationWatchdogResponseStartMin: 3,
+    generationWatchdogSoftStallMin: 5,
+    generationWatchdogHardStallMin: 10,
+    generationWatchdogAbsoluteLimitMin: 30,
+    generationWatchdogStopGraceSec: 30,
+    queueAutoRunEnabled: true,
+    autoRefreshEnabled: true
+  };
+  const workflow = {
+    status: "running",
+    awaitingResponse: true,
+    sawGeneration: true,
+    responseCandidateFingerprint: "",
+    responseStartRefreshAt: 0,
+    lastPromptAt: 1_000,
+    runnerExpiresAt: 90_000
+  };
+  const runtime = {
+    generationWatchdog: {
+      startedAt: 10_000,
+      lastProgressAt: 20_000,
+      stopRequestedAt: 0,
+      stoppedAt: 0
+    },
+    nextQueueAt: 70_000,
+    nextRefreshAt: 80_000
+  };
+
+  const idle = Lifecycle.liveCountdowns({
+    settings,
+    workflow,
+    runtime,
+    generating: false,
+    lastGenerationAt: 40_000,
+    now: 50_000
+  });
+  const response = idle.find((entry) => entry.id === "response-start");
+  assert.equal(response.dueAt, 220_000);
+  assert.equal(response.remainingMs, 170_000);
+  assert.equal(response.label, "回答恢复");
+  assert.equal(idle.find((entry) => entry.id === "queue").remainingMs, 20_000);
+  assert.equal(idle.find((entry) => entry.id === "refresh").remainingMs, 30_000);
+  assert.equal(idle.find((entry) => entry.id === "runner-lease").remainingMs, 40_000);
+
+  const generating = Lifecycle.liveCountdowns({
+    settings,
+    workflow,
+    runtime,
+    generating: true,
+    lastGenerationAt: 40_000,
+    now: 50_000
+  });
+  assert.equal(generating.find((entry) => entry.id === "watchdog-soft").dueAt, 320_000);
+  assert.equal(generating.find((entry) => entry.id === "watchdog-hard").dueAt, 620_000);
+  assert.equal(generating.find((entry) => entry.id === "watchdog-absolute").dueAt, 1_810_000);
+  assert.equal(generating.some((entry) => entry.id === "response-start"), false);
+});
+
+test("live status countdowns show stop grace and second response timeout phase", () => {
+  const settings = {
+    generationWatchdogEnabled: true,
+    generationWatchdogResponseStartMin: 3,
+    generationWatchdogSoftStallMin: 5,
+    generationWatchdogHardStallMin: 10,
+    generationWatchdogAbsoluteLimitMin: 30,
+    generationWatchdogStopGraceSec: 30,
+    queueAutoRunEnabled: false,
+    autoRefreshEnabled: false
+  };
+  const workflow = {
+    status: "running",
+    awaitingResponse: true,
+    sawGeneration: true,
+    responseCandidateFingerprint: "",
+    responseStartRefreshAt: 100_000,
+    lastPromptAt: 1_000,
+    runnerExpiresAt: 0
+  };
+  const runtime = {
+    generationWatchdog: {
+      startedAt: 1_000,
+      lastProgressAt: 1_000,
+      stopRequestedAt: 120_000,
+      stoppedAt: 0
+    }
+  };
+
+  const timers = Lifecycle.liveCountdowns({
+    settings,
+    workflow,
+    runtime,
+    generating: true,
+    lastGenerationAt: 90_000,
+    now: 130_000
+  });
+  assert.equal(timers.find((entry) => entry.id === "watchdog-stop-grace").remainingMs, 20_000);
+  assert.equal(timers.some((entry) => entry.id === "watchdog-soft"), false);
+
+  const postRefresh = Lifecycle.liveCountdowns({
+    settings,
+    workflow,
+    runtime: { generationWatchdog: {} },
+    generating: false,
+    lastGenerationAt: 90_000,
+    now: 130_000
+  });
+  const response = postRefresh.find((entry) => entry.id === "response-start");
+  assert.equal(response.phase, "刷新后");
+  assert.equal(response.dueAt, 280_000);
+});

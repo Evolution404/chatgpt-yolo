@@ -372,18 +372,90 @@
     }[phase] || String(phase || "无").replaceAll("_", " ");
   }
 
-  async function showStatus() {
+  function formatCountdown(ms) {
+    const remaining = Math.max(0, Number(ms) || 0);
+    if (remaining <= 0) return "已到期";
+    const totalSeconds = Math.ceil(remaining / 1000);
+    const seconds = totalSeconds % 60;
+    const totalMinutes = Math.floor(totalSeconds / 60);
+    const minutes = totalMinutes % 60;
+    const hours = Math.floor(totalMinutes / 60);
+    const pad = (value) => String(value).padStart(2, "0");
+    return hours > 0
+      ? pad(hours) + ":" + pad(minutes) + ":" + pad(seconds)
+      : pad(totalMinutes) + ":" + pad(seconds);
+  }
+
+  function workflowPhaseLabel(workflow, apiState, pageError = null) {
+    if (workflow.status === "blocked") return "已阻塞" + (workflow.reason ? " · " + workflow.reason : "");
+    if (workflow.status === "paused") return "已暂停" + (workflow.reason ? " · " + workflow.reason : "");
+    if (workflow.status === "completed") return "已完成";
+    if (workflow.status !== "running") return "空闲";
+    if (workflow.pendingItemId) return "工作流提示词等待发送";
+    if (!workflow.awaitingResponse) return "准备下一步";
+    if (pageError) return "检测到 ChatGPT 错误 · " + Platforms.normalizedText(pageError).slice(0, 100);
+    if (apiState.generating) return "ChatGPT 正在生成";
+    if (workflow.responseCandidateFingerprint) return "正在等待回答稳定";
+    if (workflow.responseStartRefreshAt) return "已刷新一次，等待回答恢复";
+    if (workflow.sawGeneration) return "生成已结束，等待有效回答";
+    return "等待 ChatGPT 开始回答";
+  }
+
+  function buildLiveStatus(queue = null) {
     const apiState = engine()?.getState?.() || {};
-    const queue = await queueState();
     const workflow = Commands.normalizeWorkflow(state.workflow);
     const watchdog = apiState.runtime?.generationWatchdog || {};
+    const pageError = Platforms.findErrorState(adapter());
+    const timerWorkflow = pageError ? { ...workflow, responseCandidateFingerprint: "" } : workflow;
+    const timestamp = now();
+    const timers = Lifecycle.liveCountdowns({
+      settings: apiState.settings || {},
+      workflow: timerWorkflow,
+      runtime: apiState.runtime || {},
+      generating: Boolean(apiState.generating),
+      lastGenerationAt: apiState.lastGenerationAt || 0,
+      now: timestamp
+    });
+
+    if (!pageError && workflow.responseCandidateFingerprint && !apiState.generating) {
+      const assistantText = Platforms.latestAssistantText(adapter());
+      const outcome = Commands.evaluateResponse(assistantText);
+      const quietSince = Math.max(
+        workflow.responseCandidateSince || 0,
+        apiState.lastDomActivityAt || 0,
+        apiState.lastGenerationAt || 0
+      );
+      const dueAt = quietSince + Lifecycle.responseStableMs(outcome);
+      timers.unshift({
+        id: "response-stable",
+        label: "回答稳定",
+        phase: outcome === "missing" ? "缺少控制标记" : "检测控制标记",
+        detail: outcome === "missing" ? "缺少控制标记时按安全窗口等待" : "稳定后处理本回合回答",
+        dueAt,
+        remainingMs: Math.max(0, dueAt - timestamp)
+      });
+    }
+
+    const criticalIds = new Set([
+      "response-start",
+      "response-stable",
+      "watchdog-soft",
+      "watchdog-hard",
+      "watchdog-absolute",
+      "watchdog-stop-grace"
+    ]);
+    const nextTimer = [...timers]
+      .filter((timer) => criticalIds.has(timer.id))
+      .sort((a, b) => a.dueAt - b.dueAt)[0]
+      || [...timers].sort((a, b) => a.dueAt - b.dueAt)[0]
+      || null;
     const watchdogStatus = !apiState.settings?.generationWatchdogEnabled && !watchdog.stopRequestedAt
       ? "关闭"
       : watchdog.stopRequestedAt
-        ? (watchdog.stoppedAt ? "正在恢复被中断的回答" : "已请求停止生成")
+        ? (watchdog.stoppedAt ? "正在恢复被中断的回答" : "已请求 Stop")
         : apiState.generating
-          ? "正在监控生成"
-          : "已启用";
+          ? "正在监控"
+          : "待命";
     const workflowStatus = {
       idle: "空闲",
       running: "运行中",
@@ -391,29 +463,40 @@
       completed: "已完成",
       blocked: "已阻塞"
     }[workflow.status] || workflow.status;
-    const rolloverPhase = rolloverPhaseLabel(state.rollover?.phase);
     const profileLabel = {
       safe: "安全",
       balanced: "均衡",
       fast: "快速",
       custom: "自定义"
     }[apiState.settings?.profile] || apiState.settings?.profile || "未知";
-    state.ui?.showStatus({
-      对话: state.pageId || "不可用",
-      工作流: workflow.status === "idle" ? "无" : `/${workflow.kind} · ${workflowStatus}`,
-      "切换对话": rolloverPhase,
-      目标: workflow.status === "idle" ? "—" : workflow.objective,
-      回合: workflow.status === "idle" ? "—" : `${workflow.iteration}/${workflow.maxIterations}`,
-      任务: workflow.status === "idle" ? "—" : `第 ${workflow.conversationIndex}/${workflow.autoRolloverMaxConversations} 个对话 · 共 ${workflow.totalIterations} 回合`,
-      "自动切换": workflow.status === "idle" ? "—" : (workflow.autoRolloverEnabled ? `${workflow.autoRolloverAfterTurns} 回合后` : "关闭"),
-      队列: queue?.ok ? `${queue.state.items.length} 条${queue.state.paused ? " · 已暂停" : ""}` : "不可用",
-      执行标签页: workflow.status === "running" ? (workflow.runnerId === state.ownerId ? "当前标签页" : (workflow.runnerId ? "其他标签页" : "正在获取")) : "—",
-      生成状态: apiState.generating ? "生成中" : "空闲",
-      "生成卡死监控": watchdogStatus,
-      模式: profileLabel,
-      "本次会话操作数": apiState.runtime?.sessionActionCount ?? 0,
-      "最近操作": apiState.lastAction?.message || "空闲"
-    });
+
+    return {
+      headline: apiState.settings?.enabled ? "插件运行中" : "插件已暂停",
+      nextAction: nextTimer ? nextTimer.label + " " + formatCountdown(nextTimer.remainingMs) : "当前无倒计时动作",
+      rows: [
+        ["插件", apiState.settings?.enabled ? "运行中" : "已暂停"],
+        ["页面", apiState.hydrated ? "已就绪" : "正在加载"],
+        ["工作流", workflow.status === "idle" ? "无" : "/" + workflow.kind + " · " + workflowStatus],
+        ["当前阶段", workflowPhaseLabel(workflow, apiState, pageError)],
+        ["生成状态", apiState.generating ? "生成中" : "空闲"],
+        ["卡死监控", watchdogStatus],
+        ["标签页保护", apiState.settings?.protectActiveWorkflowTabs ? "已启用 · 心跳失联时恢复" : "关闭"],
+        ["切换对话", rolloverPhaseLabel(state.rollover?.phase)],
+        ["回合", workflow.status === "idle" ? "—" : workflow.iteration + "/" + workflow.maxIterations + " · 总计 " + workflow.totalIterations],
+        ["队列", queue?.ok ? queue.state.items.length + " 条" + (queue.state.paused ? " · 已暂停" : "") : "实时状态"],
+        ["模式", profileLabel],
+        ["最近操作", apiState.lastAction?.message || "空闲"]
+      ],
+      timers: timers.map((timer) => ({
+        ...timer,
+        countdown: formatCountdown(timer.remainingMs)
+      }))
+    };
+  }
+
+  async function showStatus() {
+    const queue = await queueState();
+    state.ui?.showStatus(buildLiveStatus(queue));
     return { ok: true, focusComposer: false };
   }
 
@@ -751,7 +834,8 @@
   }
 
   function syncUI() {
-    state.ui?.update({ workflow: state.workflow });
+    const status = buildLiveStatus();
+    state.ui?.update({ workflow: state.workflow, status, nextAction: status.nextAction });
   }
 
   async function syncRoute() {

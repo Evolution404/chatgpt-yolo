@@ -196,6 +196,101 @@
     return { action: "none", reason: "生成状态仍在监控允许范围内" };
   }
 
+  function liveCountdowns({
+    settings = {},
+    workflow = {},
+    runtime = {},
+    generating = false,
+    lastGenerationAt = 0,
+    now = Date.now()
+  } = {}) {
+    const timestamp = finite(now, Date.now());
+    const timers = [];
+    const add = (id, label, dueAt, phase = "", detail = "") => {
+      const due = Math.max(0, finite(dueAt, 0));
+      if (!due) return;
+      timers.push({
+        id,
+        label,
+        phase,
+        detail,
+        dueAt: due,
+        remainingMs: Math.max(0, due - timestamp)
+      });
+    };
+
+    const watchdog = runtime?.generationWatchdog || {};
+    const watchdogEnabled = Boolean(settings.generationWatchdogEnabled);
+    if (watchdogEnabled
+      && workflow?.status === "running"
+      && workflow?.awaitingResponse
+      && !generating
+      && !workflow?.responseCandidateFingerprint
+      && finite(workflow?.lastPromptAt, 0) > 0) {
+      const timeoutMs = Math.max(0, finite(settings.generationWatchdogResponseStartMin, 3)) * 60 * 1000;
+      const refreshAt = Math.max(0, finite(workflow?.responseStartRefreshAt, 0));
+      const generationEndedAt = workflow?.sawGeneration ? Math.max(0, finite(lastGenerationAt, 0)) : 0;
+      const anchor = refreshAt || Math.max(finite(workflow?.lastPromptAt, 0), generationEndedAt);
+      add(
+        "response-start",
+        "回答恢复",
+        anchor + timeoutMs,
+        refreshAt ? "刷新后" : "首次等待",
+        refreshAt ? "到期后仍无有效回答则阻塞" : "到期后仍无有效回答则刷新一次"
+      );
+    }
+
+    const stopRequestedAt = Math.max(0, finite(watchdog.stopRequestedAt, 0));
+    if (generating && stopRequestedAt > 0) {
+      add(
+        "watchdog-stop-grace",
+        "停止生效",
+        stopRequestedAt + Math.max(0, finite(settings.generationWatchdogStopGraceSec, 30)) * 1000,
+        "等待 Stop",
+        "到期后仍在生成则刷新当前对话"
+      );
+    } else if (generating && watchdogEnabled) {
+      const startedAt = Math.max(0, finite(watchdog.startedAt, 0));
+      const progressAt = Math.max(startedAt, finite(watchdog.lastProgressAt, startedAt));
+      if (progressAt > 0) {
+        add(
+          "watchdog-soft",
+          "无进展告警",
+          progressAt + Math.max(0, finite(settings.generationWatchdogSoftStallMin, 5)) * 60 * 1000,
+          "生成监控",
+          "到期后记录卡顿告警"
+        );
+        add(
+          "watchdog-hard",
+          "自动停止",
+          progressAt + Math.max(0, finite(settings.generationWatchdogHardStallMin, 10)) * 60 * 1000,
+          "生成监控",
+          "到期后请求 Stop"
+        );
+      }
+      if (startedAt > 0) {
+        add(
+          "watchdog-absolute",
+          "生成上限",
+          startedAt + Math.max(0, finite(settings.generationWatchdogAbsoluteLimitMin, 30)) * 60 * 1000,
+          "绝对上限",
+          "达到上限后请求 Stop"
+        );
+      }
+    }
+
+    if (settings.queueAutoRunEnabled) {
+      add("queue", "队列检查", runtime?.nextQueueAt, "自动队列", "下一次允许自动发送的时间点");
+    }
+    if (settings.autoRefreshEnabled) {
+      add("refresh", "定时刷新", runtime?.nextRefreshAt, "空闲刷新", "仅在安全且空闲时执行");
+    }
+    if (workflow?.status === "running") {
+      add("runner-lease", "执行租约", workflow?.runnerExpiresAt, "自动续租", "当前标签页的工作流执行权");
+    }
+    return timers;
+  }
+
   return Object.freeze({
     VISIBLE_WORKFLOW_POLL_MS,
     HIDDEN_ACTIVE_WORKFLOW_POLL_MS,
@@ -217,6 +312,7 @@
     nextGenerationHoldUntil,
     canAutomaticRefresh,
     shouldProtectTab,
-    generationWatchdogDecision
+    generationWatchdogDecision,
+    liveCountdowns
   });
 });

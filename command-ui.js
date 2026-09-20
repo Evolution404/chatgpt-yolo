@@ -16,7 +16,7 @@
   }
 
   function mount(options = {}) {
-    if (!Commands || !document?.documentElement) return { destroy: noop, update: noop, open: noop, showStatus: noop };
+    if (!Commands || !document?.documentElement) return { destroy: noop, update: noop, open: noop, showStatus: noop, updateStatus: noop };
 
     const callbacks = {
       execute: typeof options.execute === "function" ? options.execute : async () => ({ ok: false }),
@@ -141,6 +141,15 @@
       .status-row { display: grid; grid-template-columns: 120px minmax(0,1fr); gap: 12px; font: 12px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       .status-key { color: var(--cmd-text-tertiary); }
       .status-value { min-width: 0; overflow-wrap: anywhere; color: var(--cmd-text-value); }
+      .status-summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid var(--cmd-border-subtle); border-radius: 10px; background: var(--cmd-bg-action); }
+      .status-summary strong { color: var(--cmd-text-primary); font: 700 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .status-summary span { color: var(--cmd-text-secondary); font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; }
+      .status-section-title { margin-top: 4px; color: var(--cmd-text-tertiary); font: 700 10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-transform: uppercase; letter-spacing: .06em; }
+      .status-timer { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: center; padding: 8px 10px; border: 1px solid var(--cmd-border-subtle); border-radius: 9px; background: var(--cmd-bg-action); }
+      .status-timer-main { min-width: 0; display: grid; gap: 2px; }
+      .status-timer-label { color: var(--cmd-text-value); font: 600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .status-timer-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cmd-text-tertiary); font: 10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .status-timer-value { color: var(--cmd-text-primary); font: 700 13px ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
     `;
     shadow.appendChild(style);
 
@@ -189,11 +198,12 @@
     const workflowSub = element("div", "workflow-sub");
     workflowMain.append(workflowTop, workflowSub);
     const actions = element("div", "actions");
+    const statusButton = element("button", "action", "状态");
     const pauseButton = element("button", "action", "暂停");
     const editButton = element("button", "action", "编辑");
     const clearButton = element("button", "action", "停止");
-    pauseButton.type = editButton.type = clearButton.type = "button";
-    actions.append(pauseButton, editButton, clearButton);
+    statusButton.type = pauseButton.type = editButton.type = clearButton.type = "button";
+    actions.append(statusButton, pauseButton, editButton, clearButton);
     workflow.append(workflowMain, actions);
     shadow.appendChild(workflow);
 
@@ -216,6 +226,7 @@
     let results = [...Commands.COMMANDS];
     let argumentCommand = null;
     let currentWorkflow = Commands.freshWorkflow();
+    let currentStatus = {};
     let workflowActionInFlight = false;
     let destroyed = false;
 
@@ -364,14 +375,41 @@
       run(entry, argumentCommand ? search.value : "");
     }
 
-    function showStatus(data = {}) {
-      closePalette({ restoreComposer: false });
+    function updateStatus(data = {}) {
+      currentStatus = data && typeof data === "object" ? data : {};
       statusBody.replaceChildren();
-      for (const [key, value] of Object.entries(data)) {
+      if (currentStatus.headline || currentStatus.nextAction) {
+        const summary = element("div", "status-summary");
+        summary.append(
+          element("strong", "", currentStatus.headline || "YOLO 状态"),
+          element("span", "", currentStatus.nextAction || "当前无倒计时动作")
+        );
+        statusBody.appendChild(summary);
+      }
+      for (const [key, value] of currentStatus.rows || []) {
         const row = element("div", "status-row");
         row.append(element("div", "status-key", key), element("div", "status-value", String(value ?? "")));
         statusBody.appendChild(row);
       }
+      const timers = Array.isArray(currentStatus.timers) ? currentStatus.timers : [];
+      if (timers.length) {
+        statusBody.appendChild(element("div", "status-section-title", "定时器倒计时"));
+        for (const timer of timers) {
+          const row = element("div", "status-timer");
+          const main = element("div", "status-timer-main");
+          main.append(
+            element("div", "status-timer-label", timer.label + (timer.phase ? " · " + timer.phase : "")),
+            element("div", "status-timer-detail", timer.detail || "")
+          );
+          row.append(main, element("div", "status-timer-value", timer.countdown || "—"));
+          statusBody.appendChild(row);
+        }
+      }
+    }
+
+    function showStatus(data = {}) {
+      closePalette({ restoreComposer: false });
+      updateStatus(data);
       status.dataset.open = "true";
       position();
       statusClose.focus();
@@ -379,6 +417,10 @@
 
     function update(next = {}) {
       currentWorkflow = Commands.normalizeWorkflow(next.workflow);
+      if (next.status) {
+        currentStatus = next.status;
+        if (status.dataset.open === "true") updateStatus(currentStatus);
+      }
       const visible = currentWorkflow.status !== "idle";
       workflow.dataset.visible = String(visible);
       if (!visible) return;
@@ -391,8 +433,10 @@
         completed: "已完成",
         blocked: "已阻塞"
       }[currentWorkflow.status] || currentWorkflow.status;
+      const nextAction = next.nextAction || currentStatus.nextAction || "";
       const waiting = currentWorkflow.pendingItemId ? "已加入队列" : (currentWorkflow.awaitingResponse ? "等待回答" : statusLabel);
       workflowSub.textContent = `${waiting} · 第 ${currentWorkflow.iteration}/${currentWorkflow.maxIterations} 回合${currentWorkflow.reason ? ` · ${currentWorkflow.reason}` : ""}`;
+      workflowSub.textContent += nextAction ? " · 下一动作 " + nextAction : "";
       pauseButton.textContent = ["paused", "blocked"].includes(currentWorkflow.status) ? "继续" : "暂停";
       const actionable = ["running", "paused", "blocked"].includes(currentWorkflow.status);
       pauseButton.disabled = workflowActionInFlight || !actionable;
@@ -468,6 +512,14 @@
       status.dataset.open = "false";
       callbacks.getComposer()?.focus?.();
     });
+    statusButton.addEventListener("click", () => {
+      const opening = status.dataset.open !== "true";
+      status.dataset.open = String(opening);
+      if (opening) {
+        updateStatus(currentStatus);
+        position();
+      }
+    });
     async function runWorkflowAction(action) {
       if (workflowActionInFlight) return;
       workflowActionInFlight = true;
@@ -510,6 +562,7 @@
       open: openPalette,
       close: closePalette,
       showStatus,
+      updateStatus,
       reposition: position
     });
   }
