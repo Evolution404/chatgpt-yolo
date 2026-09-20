@@ -42,13 +42,19 @@ test("active workflow protection is explicit and returns idle tabs to browser me
 test("workflow response-start timeout is bounded and refreshes once before blocking", () => {
   const runtime = read("command-runtime.js");
   const content = read("content.js");
+  const platforms = read("platforms.js");
   assert.match(runtime, /generationWatchdogResponseStartMin/);
   assert.match(runtime, /responseStartRefreshAt/);
+  assert.match(runtime, /responseActivityAt/);
+  assert.match(runtime, /latestResponseActivityText/);
+  assert.doesNotMatch(runtime, /pageError \? "" : Platforms\.latestResponseActivityText/);
   assert.match(runtime, /apiState\.lastGenerationAt/);
   assert.doesNotMatch(runtime, /generationWatchdogEnabled && !workflow\.sawGeneration/);
   assert.match(runtime, /watchdog-response-refresh/);
   assert.match(runtime, /command\.workflow\.response_start_timeout/);
   assert.match(content, /action === "watchdog-response-refresh"/);
+  assert.match(platforms, /turnSelectors/);
+  assert.match(platforms, /latestResponseActivityText/);
 });
 
 test("workflow response recovery is independent of the general automation master switch", () => {

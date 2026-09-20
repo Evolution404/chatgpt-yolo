@@ -132,6 +132,10 @@
     return Commands.fingerprint(Platforms.latestAssistantText(adapter()));
   }
 
+  function latestResponseActivityFingerprint() {
+    return Commands.fingerprint(Platforms.latestResponseActivityText(adapter()));
+  }
+
   function latestUserFingerprint() {
     return Commands.fingerprint(Platforms.latestUserText(adapter()));
   }
@@ -226,6 +230,8 @@
       next.sawGeneration = false;
       next.responseCandidateFingerprint = "";
       next.responseCandidateSince = 0;
+      next.responseActivityFingerprint = latestResponseActivityFingerprint();
+      next.responseActivityAt = 0;
       next.responseStartRefreshAt = 0;
       next.baselineFingerprint = latestAssistantFingerprint();
       next.lastAssistantFingerprint = next.baselineFingerprint;
@@ -393,9 +399,16 @@
     if (workflow.status !== "running") return "空闲";
     if (workflow.pendingItemId) return "工作流提示词等待发送";
     if (!workflow.awaitingResponse) return "准备下一步";
-    if (pageError) return "检测到 ChatGPT 错误 · " + Platforms.normalizedText(pageError).slice(0, 100);
+    if (pageError) {
+      const errorText = Platforms.normalizedText(pageError).slice(0, 100);
+      if (workflow.responseActivityAt > workflow.lastPromptAt) {
+        return "ChatGPT 显示错误，但页面仍有进展 · " + errorText;
+      }
+      return "检测到 ChatGPT 错误 · " + errorText;
+    }
     if (apiState.generating) return "ChatGPT 正在生成";
     if (workflow.responseCandidateFingerprint) return "正在等待回答稳定";
+    if (workflow.responseActivityAt > workflow.lastPromptAt) return "检测到 ChatGPT 页面进展，等待有效回答";
     if (workflow.responseStartRefreshAt) return "已刷新一次，等待回答恢复";
     if (workflow.sawGeneration) return "生成已结束，等待有效回答";
     return "等待 ChatGPT 开始回答";
@@ -961,8 +974,21 @@
     if (workflow.pendingItemId) return handlePendingWorkflowItem(apiState);
     if (!workflow.awaitingResponse) return false;
 
+    const pageError = Platforms.findErrorState(adapter());
+    const responseActivityText = Platforms.latestResponseActivityText(adapter());
+    const responseActivityFingerprint = Commands.fingerprint(responseActivityText);
+    const responseActivityChanged = Boolean(
+      responseActivityText
+      && responseActivityFingerprint !== workflow.responseActivityFingerprint
+    );
+    if (responseActivityChanged) {
+      workflow.responseActivityFingerprint = responseActivityFingerprint;
+      workflow.responseActivityAt = now();
+      workflow.responseStartRefreshAt = 0;
+    }
+
     if (apiState.generating) {
-      if (!workflow.sawGeneration || workflow.responseCandidateFingerprint) {
+      if (!workflow.sawGeneration || workflow.responseCandidateFingerprint || responseActivityChanged) {
         workflow.sawGeneration = true;
         workflow.responseCandidateFingerprint = "";
         workflow.responseCandidateSince = 0;
@@ -975,7 +1001,6 @@
     }
 
     if (now() - workflow.lastPromptAt < RESPONSE_SETTLE_MS) return false;
-    const pageError = Platforms.findErrorState(adapter());
     const assistantText = pageError ? "" : Platforms.latestAssistantText(adapter());
     const candidateFingerprint = Commands.fingerprint(assistantText);
     const noNewAssistant = !assistantText
@@ -985,8 +1010,10 @@
       const responseStartMin = Number(apiState.settings?.generationWatchdogResponseStartMin) || 3;
       const responseStartTimeoutMs = responseStartMin * 60 * 1000;
       if (apiState.settings?.generationWatchdogEnabled && workflow.lastPromptAt > 0) {
-        const generationEndedAt = workflow.sawGeneration ? Number(apiState.lastGenerationAt) || 0 : 0;
-        const anchor = workflow.responseStartRefreshAt || Math.max(workflow.lastPromptAt, generationEndedAt);
+        const anchor = Lifecycle.responseRecoveryAnchor({
+          workflow,
+          lastGenerationAt: apiState.lastGenerationAt
+        });
         if (now() - anchor >= responseStartTimeoutMs) {
           if (!workflow.responseStartRefreshAt) {
             const refreshed = await api.runAction("watchdog-response-refresh");
@@ -1008,6 +1035,11 @@
           return true;
         }
       }
+      if (responseActivityChanged) {
+        workflow.reason = "检测到 ChatGPT 页面进展，继续等待有效回答";
+        workflow.updatedAt = now();
+        await writeWorkflow(workflow);
+      }
       return false;
     }
     if (workflow.responseCandidateFingerprint !== candidateFingerprint) {
@@ -1019,8 +1051,19 @@
       await writeWorkflow(workflow);
       return false;
     }
+    if (responseActivityChanged) {
+      workflow.reason = "ChatGPT 页面仍在更新，继续等待回答稳定";
+      workflow.updatedAt = now();
+      await writeWorkflow(workflow);
+      return false;
+    }
     const outcome = Commands.evaluateResponse(assistantText);
-    const quietSince = Math.max(workflow.responseCandidateSince, apiState.lastDomActivityAt || 0, apiState.lastGenerationAt || 0);
+    const quietSince = Math.max(
+      workflow.responseCandidateSince,
+      workflow.responseActivityAt || 0,
+      apiState.lastDomActivityAt || 0,
+      apiState.lastGenerationAt || 0
+    );
     if (now() - quietSince < Lifecycle.responseStableMs(outcome)) return false;
     return processResponse();
   }

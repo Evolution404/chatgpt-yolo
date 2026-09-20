@@ -151,6 +151,40 @@ test("reads the latest ChatGPT assistant response for workflow markers", () => {
   assert.equal(Platforms.latestAssistantText(adapter, documentLike), "latest response\n[YOLO:CONTINUE]");
 });
 
+test("reads in-progress response activity from the latest ChatGPT conversation turn", () => {
+  const roleNode = (role) => ({
+    getAttribute(name) {
+      return name === "data-message-author-role" ? role : null;
+    }
+  });
+  const userTurn = {
+    textContent: "workflow prompt",
+    querySelector(selector) {
+      return selector === "[data-message-author-role]" ? roleNode("user") : null;
+    }
+  };
+  const responseTurn = {
+    textContent: "正在思考\n已调用工具\nMac\nCSP 关闭",
+    querySelector(selector) {
+      return selector === "[data-message-author-role]" ? roleNode("assistant") : null;
+    }
+  };
+  const documentLike = {
+    querySelectorAll(selector) {
+      return selector === "turn" ? [userTurn, responseTurn] : [];
+    }
+  };
+  const adapter = { turnSelectors: ["turn"], assistantSelectors: [] };
+
+  assert.equal(
+    Platforms.latestResponseActivityText(adapter, documentLike),
+    "正在思考\n已调用工具\nMac\nCSP 关闭"
+  );
+
+  documentLike.querySelectorAll = (selector) => selector === "turn" ? [userTurn] : [];
+  assert.equal(Platforms.latestResponseActivityText(adapter, documentLike), "");
+});
+
 test("reads the latest ChatGPT user prompt for workflow ownership", () => {
   const first = { textContent: "manual prompt" };
   const second = { textContent: "workflow prompt" };

@@ -182,6 +182,7 @@ test("live status countdowns expose response recovery and watchdog deadlines", (
     sawGeneration: true,
     responseCandidateFingerprint: "",
     responseStartRefreshAt: 0,
+    responseActivityAt: 45_000,
     lastPromptAt: 1_000,
     runnerExpiresAt: 90_000
   };
@@ -207,8 +208,8 @@ test("live status countdowns expose response recovery and watchdog deadlines", (
     now: 50_000
   });
   const response = idle.find((entry) => entry.id === "response-start");
-  assert.equal(response.dueAt, 220_000);
-  assert.equal(response.remainingMs, 170_000);
+  assert.equal(response.dueAt, 225_000);
+  assert.equal(response.remainingMs, 175_000);
   assert.equal(response.label, "回答恢复");
   assert.equal(idle.find((entry) => entry.id === "queue").remainingMs, 20_000);
   assert.equal(idle.find((entry) => entry.id === "refresh").remainingMs, 30_000);
@@ -228,6 +229,26 @@ test("live status countdowns expose response recovery and watchdog deadlines", (
   assert.equal(generating.find((entry) => entry.id === "watchdog-hard").dueAt, 620_000);
   assert.equal(generating.find((entry) => entry.id === "watchdog-absolute").dueAt, 1_810_000);
   assert.equal(generating.some((entry) => entry.id === "response-start"), false);
+});
+
+test("response recovery anchor follows the latest real response progress", () => {
+  const workflow = {
+    lastPromptAt: 10_000,
+    sawGeneration: true,
+    responseActivityAt: 45_000,
+    responseStartRefreshAt: 0
+  };
+  assert.equal(
+    Lifecycle.responseRecoveryAnchor({ workflow, lastGenerationAt: 40_000 }),
+    45_000
+  );
+  assert.equal(
+    Lifecycle.responseRecoveryAnchor({
+      workflow: { ...workflow, responseStartRefreshAt: 60_000 },
+      lastGenerationAt: 70_000
+    }),
+    60_000
+  );
 });
 
 test("live status countdowns show stop grace and second response timeout phase", () => {

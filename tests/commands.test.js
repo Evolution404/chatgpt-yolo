@@ -258,6 +258,23 @@ test("awaiting workflows retain and clear response stability candidates safely",
   assert.equal(paused.responseCandidateSince, 0);
 });
 
+test("awaiting workflows persist response activity progress across reloads", () => {
+  const waiting = Commands.normalizeWorkflow({
+    kind: "goal",
+    objective: "finish",
+    status: "running",
+    awaitingResponse: true,
+    responseActivityFingerprint: "activity",
+    responseActivityAt: 12345
+  }, 13000);
+  assert.equal(waiting.responseActivityFingerprint, "activity");
+  assert.equal(waiting.responseActivityAt, 12345);
+
+  const paused = Commands.setWorkflowStatus(waiting, "paused", "manual", 14000);
+  assert.equal(paused.responseActivityFingerprint, "");
+  assert.equal(paused.responseActivityAt, 0);
+});
+
 test("both automated workflows pause when the terminal marker is missing", () => {
   for (const kind of ["goal", "loop"]) {
     const workflow = Commands.normalizeWorkflow({

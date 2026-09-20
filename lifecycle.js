@@ -208,6 +208,18 @@
     return { action: "none", reason: "生成状态仍在监控允许范围内" };
   }
 
+  function responseRecoveryAnchor({ workflow = {}, lastGenerationAt = 0 } = {}) {
+    const refreshAt = Math.max(0, finite(workflow?.responseStartRefreshAt, 0));
+    if (refreshAt > 0) return refreshAt;
+    const generationEndedAt = workflow?.sawGeneration ? Math.max(0, finite(lastGenerationAt, 0)) : 0;
+    return Math.max(
+      0,
+      finite(workflow?.lastPromptAt, 0),
+      generationEndedAt,
+      finite(workflow?.responseActivityAt, 0)
+    );
+  }
+
   function liveCountdowns({
     settings = {},
     workflow = {},
@@ -242,15 +254,17 @@
       && !workflow?.responseCandidateFingerprint
       && finite(workflow?.lastPromptAt, 0) > 0) {
       const timeoutMs = Math.max(0, finite(settings.generationWatchdogResponseStartMin, 3)) * 60 * 1000;
+      const responseActivityAt = Math.max(0, finite(workflow?.responseActivityAt, 0));
       const refreshAt = Math.max(0, finite(workflow?.responseStartRefreshAt, 0));
-      const generationEndedAt = workflow?.sawGeneration ? Math.max(0, finite(lastGenerationAt, 0)) : 0;
-      const anchor = refreshAt || Math.max(finite(workflow?.lastPromptAt, 0), generationEndedAt);
+      const anchor = responseRecoveryAnchor({ workflow, lastGenerationAt });
       add(
         "response-start",
         "回答恢复",
         anchor + timeoutMs,
         refreshAt ? "刷新后" : "首次等待",
-        refreshAt ? "到期后仍无有效回答则阻塞" : "到期后仍无有效回答则刷新一次"
+        refreshAt
+          ? "到期后仍无有效回答则阻塞"
+          : (responseActivityAt > 0 ? "从最近页面进展重新计时，到期后仍无有效回答则刷新一次" : "到期后仍无有效回答则刷新一次")
       );
     }
 
@@ -334,6 +348,7 @@
     canAutomaticRefresh,
     shouldProtectTab,
     generationWatchdogDecision,
+    responseRecoveryAnchor,
     liveCountdowns
   });
 });

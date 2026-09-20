@@ -54,6 +54,9 @@
         "[data-message-author-role='user']",
         "article[data-testid^='conversation-turn'] [data-message-author-role='user']",
         "main article [data-message-author-role='user']"
+      ],
+      turnSelectors: [
+        "[data-testid^='conversation-turn']"
       ]
     })
   });
@@ -196,6 +199,19 @@
 
   function latestUserText(adapter, documentLike = document) {
     return adapter ? latestMessageText(adapter.userSelectors, documentLike) : "";
+  }
+
+  function latestResponseActivityText(adapter, documentLike = document) {
+    if (!adapter) return "";
+    const turns = uniqueElements((adapter.turnSelectors || [])
+      .flatMap((selector) => Array.from(documentLike.querySelectorAll(selector))));
+    const latestTurn = turns.at(-1);
+    if (!latestTurn) return latestAssistantText(adapter, documentLike);
+    const role = String(
+      latestTurn.querySelector?.("[data-message-author-role]")?.getAttribute?.("data-message-author-role") || ""
+    ).toLowerCase();
+    if (role === "user") return "";
+    return normalizedMultilineText(latestTurn);
   }
 
   function isTextControl(element) {
@@ -381,6 +397,7 @@
     stopGeneration,
     findErrorState,
     latestAssistantText,
+    latestResponseActivityText,
     latestUserText,
     userMessageSnapshot,
     composerText,

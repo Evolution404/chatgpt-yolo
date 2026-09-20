@@ -120,6 +120,8 @@
       promptFingerprint: "",
       responseCandidateFingerprint: "",
       responseCandidateSince: 0,
+      responseActivityFingerprint: "",
+      responseActivityAt: 0,
       responseStartRefreshAt: 0,
       runnerId: "",
       runnerExpiresAt: 0,
@@ -169,6 +171,12 @@
       promptFingerprint: cleanText(raw.promptFingerprint, 180),
       responseCandidateFingerprint: Boolean(raw.awaitingResponse) ? cleanText(raw.responseCandidateFingerprint, 180) : "",
       responseCandidateSince: Boolean(raw.awaitingResponse) ? Math.max(0, finite(raw.responseCandidateSince, 0)) : 0,
+      responseActivityFingerprint: (Boolean(raw.awaitingResponse) || Boolean(raw.pendingItemId))
+        ? cleanText(raw.responseActivityFingerprint, 180)
+        : "",
+      responseActivityAt: (Boolean(raw.awaitingResponse) || Boolean(raw.pendingItemId))
+        ? Math.max(0, finite(raw.responseActivityAt, 0))
+        : 0,
       responseStartRefreshAt: Boolean(raw.awaitingResponse) ? Math.max(0, finite(raw.responseStartRefreshAt, 0)) : 0,
       runnerId: status === "running" ? cleanText(raw.runnerId, 220) : "",
       runnerExpiresAt: status === "running" ? Math.max(0, finite(raw.runnerExpiresAt, 0)) : 0,
@@ -219,6 +227,8 @@
       workflow.sawGeneration = false;
       workflow.responseCandidateFingerprint = "";
       workflow.responseCandidateSince = 0;
+      workflow.responseActivityFingerprint = "";
+      workflow.responseActivityAt = 0;
       workflow.responseStartRefreshAt = 0;
       workflow.runnerId = "";
       workflow.runnerExpiresAt = 0;
@@ -322,6 +332,8 @@
     workflow.sawGeneration = false;
     workflow.responseCandidateFingerprint = "";
     workflow.responseCandidateSince = 0;
+    workflow.responseActivityFingerprint = "";
+    workflow.responseActivityAt = 0;
     workflow.lastAssistantFingerprint = fingerprint(text);
     workflow.lastResponseAt = at;
     workflow.iteration += 1;
