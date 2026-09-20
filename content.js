@@ -464,19 +464,26 @@
       const previousSnapshot = Platforms.userMessageSnapshot(state.platform);
       const expectedFingerprint = Commands.fingerprint(expectedText);
       Platforms.setComposerValue(composer, expectedText);
-      await sleep(120);
-      if (state.destroyed || currentPageId() !== startPageId) {
-        return { ok: false, code: "route.changed", reason: "提交启动提示前，新对话页面已发生跳转", deliveryAmbiguous: false };
+      const sendReadyDeadline = now() + 5_000;
+      let sendButton = null;
+      while (now() < sendReadyDeadline) {
+        if (state.destroyed || currentPageId() !== startPageId) {
+          return { ok: false, code: "route.changed", reason: "提交启动提示前，新对话页面已发生跳转", deliveryAmbiguous: false };
+        }
+        composer = Platforms.findComposer(state.platform) || composer;
+        if (Commands.fingerprint(Platforms.composerText(composer)) !== expectedFingerprint) {
+          return { ok: false, code: "composer.write_unconfirmed", reason: "输入框未保留新对话启动提示", deliveryAmbiguous: false };
+        }
+        sendButton = Platforms.findSendButton(state.platform, composer);
+        if (sendButton) break;
+        await sleep(100);
       }
-      composer = Platforms.findComposer(state.platform) || composer;
-      if (Commands.fingerprint(Platforms.composerText(composer)) !== expectedFingerprint) {
-        return { ok: false, code: "composer.write_unconfirmed", reason: "输入框未保留新对话启动提示", deliveryAmbiguous: false };
+      if (!sendButton) {
+        return { ok: false, code: "composer.send_not_ready", reason: "新对话发送按钮尚未就绪", deliveryAmbiguous: false };
       }
 
       submissionAttempted = true;
-      if (!Platforms.submitComposer(state.platform, composer)) {
-        return { ok: false, code: "composer.submit_failed", reason: "新对话启动提示无法提交", deliveryAmbiguous: true };
-      }
+      sendButton.click();
 
       const confirmationDeadline = now() + 15_000;
       let observed = false;
@@ -486,7 +493,7 @@
         }
         if (Platforms.submissionObserved(state.platform, { expectedText, previousSnapshot })) observed = true;
         const targetPageId = currentPageId();
-        if (observed && Config.isDurablePageId(targetPageId)) {
+        if (observed && Config.isStableConversationPageId(targetPageId)) {
           return { ok: true, targetPageId, deliveryAmbiguous: false };
         }
         await sleep(150);

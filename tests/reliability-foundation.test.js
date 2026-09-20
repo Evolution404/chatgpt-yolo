@@ -93,6 +93,12 @@ test('the only transient text submission surface is the persisted rollover boots
   assert.match(bootstrap, /!Config\.isSupportedUrl\(location\.href\) \|\| Config\.isDurablePageId\(startPageId\)/);
   assert.match(bootstrap, /previousSnapshot = Platforms\.userMessageSnapshot/);
   assert.match(bootstrap, /Platforms\.submissionObserved/);
+  assert.match(bootstrap, /Config\.isStableConversationPageId/);
+  assert.match(bootstrap, /sendReadyDeadline/);
+  assert.match(bootstrap, /Platforms\.findSendButton/);
+  assert.match(bootstrap, /sendButton\.click\(\)/);
+  assert.match(bootstrap, /composer\.send_not_ready/);
+  assert.doesNotMatch(bootstrap, /Platforms\.submitComposer/);
   assert.match(runtime, /phase: "bootstrap_submitting"[\s\S]{0,700}writeRollover\(submitting\)[\s\S]{0,300}submitTransientBootstrap/);
 });
 

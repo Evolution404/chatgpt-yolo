@@ -634,7 +634,7 @@
     const api = engine();
     const currentPageId = Config.pageId(location.href);
     if (transaction.phase === "bootstrap_submitting") {
-      if (Config.isDurablePageId(currentPageId) && latestUserFingerprint() === transaction.bootstrapPromptFingerprint) {
+      if (Config.isStableConversationPageId(currentPageId) && latestUserFingerprint() === transaction.bootstrapPromptFingerprint) {
         const recovered = Rollover.normalizeTransaction({
           ...transaction,
           phase: "bootstrap_sent",

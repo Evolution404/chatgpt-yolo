@@ -105,7 +105,7 @@ Fault-injection coverage must include refresh/restart at every transaction phase
 Current validation on 2026-09-19:
 
 - rollover/config/runtime/UI targeted suite: 93/93 pass;
-- full repository suite: 315/315 pass;
+- full repository suite: 316/316 pass;
 - `npm run validate:core` passes end-to-end;
 - `npm run check` passes;
 - `npm run verify:extension` passes and confirms the public extension boundary;
@@ -132,7 +132,7 @@ The 1.2.0 release also covers two failure modes outside the original generating-
 - **Response never starts:** once a workflow prompt is confirmed delivered, a configurable response-start timer (default 3 minutes) refreshes the current conversation once if ChatGPT never begins generating and no new assistant response appears. A second timeout blocks the workflow instead of waiting indefinitely.
 - **Renderer fully freezes:** content scripts persist liveness heartbeats to `chrome.storage.session`. A protected running workflow whose heartbeat becomes stale is eligible for strong recovery only at the safe `awaitingResponse && !pendingItemId` boundary. YOLO clears the stale runner lease, opens the same durable conversation in a replacement tab, closes the unresponsive tab on a best-effort basis, and lets the new runtime consume the server-side response. Active rollover transactions block this strong replacement path and fall back to the narrower recovery behavior.
 
-Final real-browser acceptance on 2026-09-20 used a Chrome profile cloned from an authenticated ChatGPT environment and the packaged unpacked extension. The normal two-turn Goal smoke completed automatically (`TEST_STEP_1` -> `[YOLO:CONTINUE]` -> `TEST_STEP_2` -> `[YOLO:DONE]`). A second smoke deliberately locked the ChatGPT renderer after the Goal prompt reached `running + awaitingResponse`; the replacement tab reloaded the same `/c/...` conversation, recovered `TEST_FREEZE_RECOVERED\n[YOLO:DONE]`, and advanced the durable workflow to `completed` without replaying the original prompt.
+Final real-browser acceptance on 2026-09-20 used a Chrome profile cloned from an authenticated ChatGPT environment and the packaged unpacked extension. The normal two-turn Goal smoke completed automatically (`TEST_STEP_1` -> `[YOLO:CONTINUE]` -> `TEST_STEP_2` -> `[YOLO:DONE]`). A second smoke deliberately locked the ChatGPT renderer after the Goal prompt reached `running + awaitingResponse`; the replacement tab reloaded the same `/c/...` conversation, recovered `TEST_FREEZE_RECOVERED\n[YOLO:DONE]`, and advanced the durable workflow to `completed` without replaying the original prompt. Manual `/rollover smoke` then completed from a canonical source `/c/<id>` through strict handoff, transient bootstrap, and a distinct canonical target `/c/<id>` with `phase=bound`. Finally, an automatic-rollover Goal with a 2-turn threshold completed turn 1 and turn 2 in the source conversation, automatically rolled over, restored the workflow with `conversationIndex=2`, completed turn 3 in the successor conversation, and ended with `totalIterations=3` and `status=completed`.
 
 Before a release is marked production-ready, perform a real unpacked-extension smoke test against the current ChatGPT DOM for both `/rollover` and one automatic threshold rollover. DOM behavior is intentionally not inferred solely from unit tests.
 

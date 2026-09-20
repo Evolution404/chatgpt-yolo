@@ -349,6 +349,17 @@
     }
   }
 
+  function isStableConversationPageId(value) {
+    if (!isDurablePageId(value)) return false;
+    try {
+      const pathname = new URL(value).pathname.replace(/\/+$/, "");
+      const segment = pathname.split("/").at(-1) || "";
+      return Boolean(segment) && !/^WEB:/i.test(segment);
+    } catch {
+      return false;
+    }
+  }
+
   function randomBetween(min, max, random = Math.random) {
     const low = Math.min(min, max);
     const high = Math.max(min, max);
@@ -419,6 +430,7 @@
     pageId,
     isSupportedUrl,
     isDurablePageId,
+    isStableConversationPageId,
     randomBetween,
     pruneHistory,
     limitStatus,

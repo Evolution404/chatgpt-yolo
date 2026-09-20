@@ -50,6 +50,12 @@ test("normalizes conversation URLs into stable page IDs", () => {
   assert.equal(Config.pageId("https://chatgpt.com/"), "https://chatgpt.com/");
 });
 
+test("stable conversation ids reject ChatGPT transitional WEB routes", () => {
+  assert.equal(Config.isStableConversationPageId("https://chatgpt.com/c/WEB:1234"), false);
+  assert.equal(Config.isStableConversationPageId("https://chatgpt.com/c/6aaf5268-8c20-83ee-8f34-d4c2ccfcce4a"), true);
+  assert.equal(Config.isStableConversationPageId("https://chatgpt.com/"), false);
+});
+
 test("supports only HTTPS ChatGPT URLs on default ports", () => {
   assert.equal(Config.isSupportedUrl("https://chatgpt.com/c/one"), true);
   assert.equal(Config.isSupportedUrl("https://team.chatgpt.com/c/one"), true);
