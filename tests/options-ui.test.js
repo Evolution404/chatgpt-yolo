@@ -15,10 +15,10 @@ test("matches every search token across metadata and visible copy", () => {
 });
 
 test("maps save messages to explicit visual states", () => {
-  assert.equal(UI.saveStateFor("Loading…"), "loading");
-  assert.equal(UI.saveStateFor("Saving…"), "saving");
-  assert.equal(UI.saveStateFor("Saved"), "saved");
-  assert.equal(UI.saveStateFor("Session history reset"), "saved");
-  assert.equal(UI.saveStateFor("Could not save settings."), "error");
-  assert.equal(UI.saveStateFor("No conversation selected"), "limited");
+  assert.equal(UI.saveStateFor("加载中…"), "loading");
+  assert.equal(UI.saveStateFor("正在保存…"), "saving");
+  assert.equal(UI.saveStateFor("已保存"), "saved");
+  assert.equal(UI.saveStateFor("会话历史已重置"), "saved");
+  assert.equal(UI.saveStateFor("无法保存设置。"), "error");
+  assert.equal(UI.saveStateFor("未选择已保存的对话"), "limited");
 });

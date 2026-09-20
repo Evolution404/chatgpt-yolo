@@ -8,9 +8,9 @@ const read = (name) => fs.readFileSync(path.join(__dirname, "..", name), "utf8")
 
 test("import confirmation is explicit about scope and exclusions", () => {
   const message = UI.importConfirmation({ conversations: 2, templates: 3 });
-  assert.match(message, /2 conversation settings/);
-  assert.match(message, /3 templates/);
-  assert.match(message, /Active queues and goals will not be changed/);
+  assert.match(message, /2 个对话设置/);
+  assert.match(message, /3 个模板/);
+  assert.match(message, /正在运行的队列和工作流不会被修改/);
 });
 
 test("settings controller loads only packaged local portability scripts", () => {
@@ -48,7 +48,7 @@ test("data controls mount once and update settings search", () => {
 
 test("failed current-tab synchronization is reported without undoing a completed import", () => {
   const source = read("options-portability.js");
-  assert.match(source, /Backup imported\. Refresh the ChatGPT tab/);
+  assert.match(source, /备份已导入。如果恢复后的设置未出现在 ChatGPT 标签页/);
   assert.match(source, /level === "warning"/);
 });
 

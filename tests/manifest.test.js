@@ -31,6 +31,7 @@ test("content scripts load shared configuration before the engine", () => {
     "platforms.js",
     "shared.js",
     "commands.js",
+    "rollover.js",
     "command-ui.js",
     "content-state.js",
     "content.js",
@@ -46,9 +47,9 @@ test("manifest grants host access only to ChatGPT", () => {
   assert.doesNotMatch(pkg.description, /grok/i);
 });
 
-test("public v1 metadata and permissions stay intentionally narrow", () => {
-  assert.equal(manifest.version, "1.1.0");
-  assert.equal(manifest.homepage_url, "https://github.com/kartikkabadi/chatgpt-yolo");
+test("public metadata and permissions stay intentionally narrow", () => {
+  assert.equal(manifest.version, "1.2.0");
+  assert.equal(manifest.homepage_url, "https://github.com/Evolution404/chatgpt-yolo");
   assert.deepEqual(manifest.permissions, ["alarms", "scripting", "storage"]);
   assert.equal(manifest.minimum_chrome_version, "114");
 });

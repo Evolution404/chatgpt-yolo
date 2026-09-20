@@ -28,7 +28,7 @@
     return {
       state,
       ok: false,
-      reason: `Workflow messages cannot be ${operation} from the queue; pause, edit, or stop the workflow instead`,
+      reason: `工作流托管消息不能直接在队列中执行“${operation}”；请改为暂停、编辑或停止工作流`,
       code: "queue.workflow_owned"
     };
   }
@@ -209,7 +209,7 @@
   function addItem(rawState, input, { front = false, at = Date.now(), id, requireUnpaused = false, dedupeWindowMs = 0 } = {}) {
     let state = normalizeState(rawState, at);
     if (requireUnpaused && state.paused) {
-      return { state, ok: false, reason: "Queue is paused", code: "queue.paused" };
+      return { state, ok: false, reason: "队列已暂停", code: "queue.paused" };
     }
     const dedupeKey = cleanText(input?.dedupeKey, 220);
     if (dedupeKey) {
@@ -221,13 +221,13 @@
       if (completed) return { state, ok: true, alreadyCompleted: true, deduplicated: true };
     }
     if (state.items.length >= MAX_ITEMS) {
-      return { state, ok: false, reason: `Queue limit of ${MAX_ITEMS} messages reached`, code: "queue.full" };
+      return { state, ok: false, reason: `队列已达到 ${MAX_ITEMS} 条消息上限`, code: "queue.full" };
     }
     const text = cleanText(input?.text);
-    if (!text) return { state, ok: false, reason: "Message is empty", code: "queue.empty" };
+    if (!text) return { state, ok: false, reason: "消息内容为空", code: "queue.empty" };
     const totalTextLength = state.items.reduce((sum, item) => sum + item.text.length, 0);
     if (totalTextLength + text.length > MAX_QUEUE_TEXT_LENGTH) {
-      return { state, ok: false, reason: "Queue text capacity reached; send or remove messages before adding more", code: "queue.capacity" };
+      return { state, ok: false, reason: "队列文本容量已满；请先发送或删除消息后再添加", code: "queue.capacity" };
     }
 
     const item = normalizeItem({
@@ -255,14 +255,14 @@
   function updateItem(rawState, itemId, text, at = Date.now()) {
     let state = normalizeState(rawState, at);
     const clean = cleanText(text);
-    if (!clean) return { state, ok: false, reason: "Message is empty", code: "queue.empty" };
+    if (!clean) return { state, ok: false, reason: "消息内容为空", code: "queue.empty" };
     const item = state.items.find((entry) => entry.id === itemId);
-    if (!item) return { state, ok: false, reason: "Queue item not found", code: "queue.not_found" };
+    if (!item) return { state, ok: false, reason: "未找到队列消息", code: "queue.not_found" };
     if (isWorkflowOwned(item)) return workflowOwnedError(state, "edited");
-    if (item.state === "sending") return { state, ok: false, reason: "Message is currently sending", code: "queue.sending" };
+    if (item.state === "sending") return { state, ok: false, reason: "消息正在发送中", code: "queue.sending" };
     const totalWithoutItem = state.items.reduce((sum, entry) => sum + (entry.id === item.id ? 0 : entry.text.length), 0);
     if (totalWithoutItem + clean.length > MAX_QUEUE_TEXT_LENGTH) {
-      return { state, ok: false, reason: "Queue text capacity reached; shorten or remove another message", code: "queue.capacity" };
+      return { state, ok: false, reason: "队列文本容量已满；请缩短消息或删除其他消息", code: "queue.capacity" };
     }
     item.text = clean;
     item.updatedAt = at;
@@ -283,8 +283,8 @@
   function removeItem(rawState, itemId, at = Date.now()) {
     let state = normalizeState(rawState, at);
     const item = state.items.find((entry) => entry.id === itemId);
-    if (!item) return { state, ok: false, reason: "Queue item not found", code: "queue.not_found" };
-    if (item.state === "sending") return { state, ok: false, reason: "Message is currently sending", code: "queue.sending" };
+    if (!item) return { state, ok: false, reason: "未找到队列消息", code: "queue.not_found" };
+    if (item.state === "sending") return { state, ok: false, reason: "消息正在发送中", code: "queue.sending" };
     state.items = state.items.filter((entry) => entry.id !== itemId);
     if (state.pauseReason === "failure" && !state.items.some((entry) => entry.state === "failed")) {
       state.paused = false;
@@ -332,7 +332,7 @@
       return {
         state,
         ok: false,
-        reason: "A message has unknown delivery status and requires explicit retry or removal",
+        reason: "有消息的送达状态不确定，需要手动重试或删除",
         code: "queue.delivery_unknown"
       };
     }
@@ -364,9 +364,9 @@
   function retryItem(rawState, itemId, at = Date.now()) {
     let state = normalizeState(rawState, at);
     const item = state.items.find((entry) => entry.id === itemId);
-    if (!item) return { state, ok: false, reason: "Queue item not found", code: "queue.not_found" };
+    if (!item) return { state, ok: false, reason: "未找到队列消息", code: "queue.not_found" };
     if (isWorkflowOwned(item)) return workflowOwnedError(state, "retried");
-    if (item.state === "sending") return { state, ok: false, reason: "Message is currently sending", code: "queue.sending" };
+    if (item.state === "sending") return { state, ok: false, reason: "消息正在发送中", code: "queue.sending" };
     item.state = "pending";
     item.error = "";
     item.errorCode = "";
@@ -383,14 +383,14 @@
 
   function claimNext(rawState, ownerId, { at = Date.now(), leaseMs = CLAIM_TTL_MS } = {}) {
     let state = normalizeState(rawState, at);
-    if (state.paused) return { state, ok: false, reason: "Queue is paused", code: "queue.paused" };
+    if (state.paused) return { state, ok: false, reason: "队列已暂停", code: "queue.paused" };
     if (state.items.some((entry) => entry.state === "sending")) {
-      return { state, ok: false, reason: "Another queued message is already sending", code: "queue.busy" };
+      return { state, ok: false, reason: "已有另一条队列消息正在发送", code: "queue.busy" };
     }
     const item = state.items.find((entry) => entry.state === "pending");
-    if (!item) return { state, ok: false, reason: "No queued message is ready", code: "queue.empty" };
+    if (!item) return { state, ok: false, reason: "当前没有可发送的队列消息", code: "queue.empty" };
     if (item.nextAttemptAt > at) {
-      return { state, ok: false, reason: "The next queued message is waiting for retry backoff", code: "queue.waiting", nextAttemptAt: item.nextAttemptAt };
+      return { state, ok: false, reason: "下一条队列消息仍处于重试等待期", code: "queue.waiting", nextAttemptAt: item.nextAttemptAt };
     }
 
     item.state = "sending";
@@ -408,7 +408,7 @@
     let state = normalizeState(rawState, at);
     const item = state.items.find((entry) => entry.id === itemId);
     if (!item || item.state !== "sending" || item.claimToken !== claimToken) {
-      return { state, ok: false, reason: "Queue claim is no longer valid", code: "queue.claim_invalid" };
+      return { state, ok: false, reason: "队列发送租约已失效", code: "queue.claim_invalid" };
     }
     item.claimPhase = "submitting";
     item.updatedAt = at;
@@ -421,7 +421,7 @@
     let state = normalizeState(rawState, at);
     const item = state.items.find((entry) => entry.id === itemId);
     if (!item || item.state !== "sending" || item.claimToken !== claimToken) {
-      return { state, ok: false, reason: "Queue claim is no longer valid", code: "queue.claim_invalid" };
+      return { state, ok: false, reason: "队列发送租约已失效", code: "queue.claim_invalid" };
     }
     item.state = "pending";
     item.claimToken = "";
@@ -441,10 +441,10 @@
       if (state.completions.some((completion) => completion.itemId === itemId)) {
         return { state, ok: true, alreadyCompleted: true };
       }
-      return { state, ok: false, reason: "Queue item was not found", code: "queue.not_found" };
+      return { state, ok: false, reason: "未找到队列消息", code: "queue.not_found" };
     }
     if (item.state !== "sending" || item.claimToken !== claimToken) {
-      return { state, ok: false, reason: "Queue claim is no longer valid", code: "queue.claim_invalid" };
+      return { state, ok: false, reason: "队列发送租约已失效", code: "queue.claim_invalid" };
     }
     state.items = state.items.filter((entry) => entry.id !== itemId);
     state.lastSentAt = at;
@@ -468,7 +468,7 @@
     let state = normalizeState(rawState, at);
     const item = state.items.find((entry) => entry.id === itemId);
     if (!item || item.state !== "sending" || item.claimToken !== claimToken) {
-      return { state, ok: false, reason: "Queue claim is no longer valid", code: "queue.claim_invalid" };
+      return { state, ok: false, reason: "队列发送租约已失效", code: "queue.claim_invalid" };
     }
 
     const maxRetries = Math.max(0, Math.round(finite(options.maxRetries, 0)));

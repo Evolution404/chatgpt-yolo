@@ -6,23 +6,61 @@ const path = require("node:path");
 const root = path.join(__dirname, "..");
 const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
 
-test("the tab supervisor is alarm-driven, staggered, and never force reloads or activates tabs", () => {
+test("the tab supervisor is alarm-driven, staggered, and may reload only protected workflow tabs without activating them", () => {
   const source = read("tab-supervisor.js");
   assert.match(source, /periodInMinutes: 1/);
   assert.match(source, /MAX_INJECTIONS_PER_SWEEP = 2/);
   assert.match(source, /tab\.discarded/);
   assert.match(source, /tab\.frozen/);
   assert.match(source, /tab\.status !== "loading"/);
-  assert.doesNotMatch(source, /tabs\.reload|location\.reload|tabs\.discard|active: true/);
+  assert.match(source, /recoverProtectedTab/);
+  assert.match(source, /chrome\.tabs\.reload/);
+  assert.match(source, /if \(!health\?\.ok && protect\)/);
+  assert.doesNotMatch(source, /tabs\.discard|active: true/);
 });
 
-test("active workflow protection is explicit and returns idle tabs to Memory Saver", () => {
+test("tab supervisor reinjection uses the exact manifest content-script stack and order", () => {
+  const supervisor = read("tab-supervisor.js");
+  const manifest = JSON.parse(read("manifest.json"));
+  const match = supervisor.match(/const SCRIPT_FILES = Object\.freeze\(\[([\s\S]*?)\]\);/);
+  assert.ok(match, "tab-supervisor SCRIPT_FILES must be statically inspectable");
+  const injected = JSON.parse(`[${match[1]}]`);
+  assert.deepEqual(injected, manifest.content_scripts[0].js);
+  assert.ok(injected.indexOf("shared.js") < injected.indexOf("commands.js"));
+  assert.ok(injected.indexOf("commands.js") < injected.indexOf("rollover.js"));
+});
+
+test("active workflow protection is explicit and returns idle tabs to browser memory saving", () => {
   const source = read("tab-supervisor.js");
   assert.match(source, /protectActiveWorkflowTabs/);
   assert.match(source, /autoDiscardable: desiredAutoDiscardable/);
   const options = read("options.html");
   assert.match(options, /data-setting="protectActiveWorkflowTabs"/);
-  assert.match(options, /Memory Saver/);
+  assert.match(options, /内存节省/);
+});
+
+test("workflow response-start timeout is bounded and refreshes once before blocking", () => {
+  const runtime = read("command-runtime.js");
+  const content = read("content.js");
+  assert.match(runtime, /generationWatchdogResponseStartMin/);
+  assert.match(runtime, /responseStartRefreshAt/);
+  assert.match(runtime, /watchdog-response-refresh/);
+  assert.match(runtime, /command\.workflow\.response_start_timeout/);
+  assert.match(content, /action === "watchdog-response-refresh"/);
+});
+
+test("renderer freeze recovery uses persisted heartbeats instead of waiting only on renderer replies", () => {
+  const content = read("content.js");
+  const background = read("background.js");
+  const supervisor = read("tab-supervisor.js");
+  assert.match(content, /YOLO_TAB_HEARTBEAT/);
+  assert.match(content, /restartHeartbeatTimer/);
+  assert.match(background, /TAB_HEARTBEAT_SESSION_KEY/);
+  assert.match(background, /chrome\.storage\?\.session|sessionAreaCall/);
+  assert.match(supervisor, /readHeartbeat/);
+  assert.match(supervisor, /heartbeatIsStale/);
+  assert.match(supervisor, /content heartbeat is stale/);
+  assert.doesNotMatch(content, /setInterval\([^\n]*Heartbeat/i);
 });
 
 test("content and command runtimes use adaptive one-shot timers instead of hot intervals", () => {
@@ -97,7 +135,7 @@ test("tab discard protection is derived from durable settings and workflow state
 test("the lifecycle release increments the content-script version", () => {
   const manifest = JSON.parse(read("manifest.json"));
   const pkg = JSON.parse(read("package.json"));
-  assert.equal(manifest.version, "1.1.0");
-  assert.equal(pkg.version, "1.1.0");
-  assert.match(read("config.js"), /const VERSION = "1\.1\.0"/);
+  assert.equal(manifest.version, "1.2.0");
+  assert.equal(pkg.version, "1.2.0");
+  assert.match(read("config.js"), /const VERSION = "1\.2\.0"/);
 });

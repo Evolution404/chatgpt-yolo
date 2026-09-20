@@ -48,7 +48,7 @@
     try {
       chrome.scripting.executeScript({
         target: { tabId: sourceTabId },
-        files: ["config.js", "lifecycle.js", "platforms.js", "shared.js", "commands.js", "command-ui.js", "content-state.js", "content.js", "command-runtime.js"]
+        files: ["config.js", "lifecycle.js", "platforms.js", "shared.js", "commands.js", "rollover.js", "command-ui.js", "content-state.js", "content.js", "command-runtime.js"]
       }, () => resolve(!chrome.runtime.lastError));
     } catch {
       resolve(false);
@@ -127,23 +127,23 @@
     const requested = Config.normalizeSettings(nextSettings);
     const revision = ++saveRevision;
     settings = requested;
-    els.saveStatus.textContent = "Saving…";
+    els.saveStatus.textContent = "正在保存…";
 
     const task = async () => {
       const response = await sendContentWithInject({ type: "YOLO_SET_SETTINGS", settings: requested });
       if (!response?.ok) {
-        if (revision === saveRevision) els.saveStatus.textContent = "Could not save settings.";
+        if (revision === saveRevision) els.saveStatus.textContent = "无法保存设置。";
         return false;
       }
       contentState = durableContentState(response.state);
       if (!contentState) {
-        if (revision === saveRevision) els.saveStatus.textContent = "The selected conversation is no longer saved.";
+        if (revision === saveRevision) els.saveStatus.textContent = "所选对话已不再是可用的已保存对话。";
         return false;
       }
       if (revision === saveRevision) {
         renderControls(response.settings);
         els.scope.textContent = `${contentState.platform} · ${contentState.pageId}`;
-        els.saveStatus.textContent = "Saved";
+        els.saveStatus.textContent = "已保存";
       }
       return true;
     };
@@ -170,7 +170,7 @@
       saveTimer = null;
       await saveSettings().catch((error) => {
         console.error(`[YOLO options] settings save failed: ${Shared.errorMessage(error)}`);
-        els.saveStatus.textContent = "Save failed";
+        els.saveStatus.textContent = "保存失败";
       });
     }
     await saveLock.current.catch(() => {});
@@ -191,7 +191,7 @@
     if (!templates.length) {
       const empty = document.createElement("li");
       empty.className = "template-empty";
-      empty.textContent = "No templates yet. Create one from the editor.";
+      empty.textContent = "暂无模板，请在左侧创建。";
       els.templateList.append(empty);
       return;
     }
@@ -208,11 +208,11 @@
       actions.className = "template-actions";
       const edit = document.createElement("button");
       edit.type = "button";
-      edit.textContent = "Edit";
+      edit.textContent = "编辑";
       edit.addEventListener("click", () => beginTemplateEdit(template));
       const remove = document.createElement("button");
       remove.type = "button";
-      remove.textContent = "Delete";
+      remove.textContent = "删除";
       remove.className = "danger";
       remove.addEventListener("click", () => removeTemplate(template.id));
       actions.append(edit, remove);
@@ -226,10 +226,10 @@
     pendingTemplateId = "";
     els.templateName.value = template.name;
     els.templateText.value = template.text;
-    els.saveTemplate.textContent = "Save template";
+    els.saveTemplate.textContent = "保存模板";
     els.cancelTemplate.hidden = false;
     els.templateName.focus();
-    setTemplateStatus("Editing template.");
+    setTemplateStatus("正在编辑模板。");
   }
 
   function cancelTemplateEdit() {
@@ -237,7 +237,7 @@
     pendingTemplateId = "";
     els.templateName.value = "";
     els.templateText.value = "";
-    els.saveTemplate.textContent = "Add template";
+    els.saveTemplate.textContent = "添加模板";
     els.cancelTemplate.hidden = true;
     setTemplateStatus("");
   }
@@ -246,7 +246,7 @@
     const name = els.templateName.value.trim();
     const text = els.templateText.value.trim();
     if (!name || !text) {
-      setTemplateStatus("Template name and message are required.", true);
+      setTemplateStatus("请填写模板名称和消息内容。", true);
       return;
     }
     const adding = !editingTemplateId;
@@ -264,20 +264,20 @@
         });
       }
       if (!response?.ok) {
-        setTemplateStatus(response?.reason || "Could not save template.", true);
+        setTemplateStatus(response?.reason || "无法保存模板。", true);
         return;
       }
       templates = response.templates;
       cancelTemplateEdit();
       renderTemplates();
-      setTemplateStatus("Template saved.");
+      setTemplateStatus("模板已保存。");
     } finally {
       setBusy(false);
     }
   }
 
   async function removeTemplate(templateId) {
-    if (!window.confirm("Delete this template? This cannot be undone.")) return;
+    if (!window.confirm("确定删除此模板吗？此操作无法撤销。")) return;
     setBusy(true);
     try {
       const response = await sendBackground({ type: "YOLO_TEMPLATE_REMOVE", templateId });
@@ -285,15 +285,15 @@
         templates = response.templates;
         if (editingTemplateId === templateId) cancelTemplateEdit();
         renderTemplates();
-        setTemplateStatus("Template deleted.");
-      } else setTemplateStatus(response?.reason || "Could not delete template.", true);
+        setTemplateStatus("模板已删除。");
+      } else setTemplateStatus(response?.reason || "无法删除模板。", true);
     } finally {
       setBusy(false);
     }
   }
 
   async function resetTemplates() {
-    if (!window.confirm("Replace all templates with the built-in defaults?")) return;
+    if (!window.confirm("要用内置默认模板替换全部现有模板吗？")) return;
     setBusy(true);
     try {
       const response = await sendBackground({ type: "YOLO_TEMPLATES_RESET" });
@@ -301,9 +301,9 @@
         templates = response.templates;
         cancelTemplateEdit();
         renderTemplates();
-        setTemplateStatus("Default templates restored.");
+        setTemplateStatus("已恢复默认模板。");
       } else {
-        setTemplateStatus(response?.reason || "Could not restore default templates.", true);
+        setTemplateStatus(response?.reason || "无法恢复默认模板。", true);
       }
     } finally {
       setBusy(false);
@@ -314,13 +314,13 @@
     setBusy(true);
     contentState = await resolveSourceTab();
     if (!contentState) {
-      els.scope.textContent = "Open a saved ChatGPT conversation (/c/...) to configure automation. Templates remain available below.";
-      els.saveStatus.textContent = "No saved conversation selected";
+      els.scope.textContent = "请打开一个已保存的 ChatGPT 对话（/c/...）以配置自动化。下方模板功能仍可使用。";
+      els.saveStatus.textContent = "未选择已保存的对话";
     } else {
       settings = contentState.settings;
       renderControls(settings);
       els.scope.textContent = `${contentState.platform} · ${contentState.pageId}`;
-      els.saveStatus.textContent = "Saved";
+      els.saveStatus.textContent = "已保存";
     }
 
     const templateResponse = await sendBackground({ type: "YOLO_TEMPLATES_GET" });
@@ -346,7 +346,7 @@
   }
 
   els.resetDefaults.addEventListener("click", () => {
-    if (!window.confirm("Restore every automation setting to its default value?")) return;
+    if (!window.confirm("确定将所有自动化设置恢复为默认值吗？")) return;
     const next = Config.normalizeSettings({ ...Config.DEFAULT_SETTINGS, enabled: settings.enabled });
     renderControls(next);
     saveSettings(next);
@@ -355,7 +355,7 @@
     await flushScheduledSave();
     setBusy(true);
     const response = await sendContentWithInject({ type: "YOLO_RESET_RUNTIME" });
-    els.saveStatus.textContent = response?.ok ? "Session history reset" : "Could not reset session history";
+    els.saveStatus.textContent = response?.ok ? "会话历史已重置" : "无法重置会话历史";
     setBusy(false);
   });
   els.saveTemplate.addEventListener("click", saveTemplate);
@@ -383,8 +383,8 @@
   init().catch((error) => {
     sourceTabId = 0;
     contentState = null;
-    els.scope.textContent = `Startup failed: ${Shared.errorMessage(error)}`;
-    els.saveStatus.textContent = "Unavailable";
+    els.scope.textContent = `启动失败：${Shared.errorMessage(error)}`;
+    els.saveStatus.textContent = "不可用";
     setBusy(true);
   });
 })();

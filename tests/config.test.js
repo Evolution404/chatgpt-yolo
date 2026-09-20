@@ -8,13 +8,33 @@ test("normalizes and clamps settings with interval invariants", () => {
     queueIntervalMaxSec: 2,
     approvalDelayMinSec: -10,
     scanIntervalSec: 500,
+    autoRolloverAfterTurns: 1,
+    autoRolloverMaxConversations: 99,
+    generationWatchdogSoftStallMin: 20,
+    generationWatchdogHardStallMin: 5,
+    generationWatchdogAbsoluteLimitMin: 7,
+    generationWatchdogStopGraceSec: 1,
     queueMaxRetries: "2.6"
   });
   assert.equal(settings.queueIntervalMinSec, 50);
   assert.equal(settings.queueIntervalMaxSec, 50);
   assert.equal(settings.approvalDelayMinSec, 0);
   assert.equal(settings.scanIntervalSec, 60);
+  assert.equal(settings.autoRolloverAfterTurns, 2);
+  assert.equal(settings.autoRolloverMaxConversations, 25);
+  assert.equal(settings.generationWatchdogHardStallMin, 20);
+  assert.equal(settings.generationWatchdogAbsoluteLimitMin, 20);
+  assert.equal(settings.generationWatchdogStopGraceSec, 5);
   assert.equal(settings.queueMaxRetries, 3);
+});
+
+test("stuck generation watchdog defaults are conservative and enabled", () => {
+  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogEnabled, true);
+  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogResponseStartMin, 3);
+  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogSoftStallMin, 5);
+  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogHardStallMin, 10);
+  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogAbsoluteLimitMin, 30);
+  assert.equal(Config.DEFAULT_SETTINGS.generationWatchdogStopGraceSec, 30);
 });
 
 test("migrates legacy boolean setting names", () => {
@@ -28,6 +48,12 @@ test("migrates legacy boolean setting names", () => {
 test("normalizes conversation URLs into stable page IDs", () => {
   assert.equal(Config.pageId("https://chatgpt.com/c/abc?temporary-chat=true#bottom"), "https://chatgpt.com/c/abc");
   assert.equal(Config.pageId("https://chatgpt.com/"), "https://chatgpt.com/");
+});
+
+test("stable conversation ids reject ChatGPT transitional WEB routes", () => {
+  assert.equal(Config.isStableConversationPageId("https://chatgpt.com/c/WEB:1234"), false);
+  assert.equal(Config.isStableConversationPageId("https://chatgpt.com/c/6aaf5268-8c20-83ee-8f34-d4c2ccfcce4a"), true);
+  assert.equal(Config.isStableConversationPageId("https://chatgpt.com/"), false);
 });
 
 test("supports only HTTPS ChatGPT URLs on default ports", () => {

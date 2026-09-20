@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "YOLO for ChatGPT",
+  "name": "YOLO - ChatGPT 自动化",
   "short_name": "YOLO",
-  "version": "1.1.0",
-  "description": "Local-first Chrome extension for reliable queues and bounded workflows in long ChatGPT conversations.",
-  "homepage_url": "https://github.com/kartikkabadi/chatgpt-yolo",
+  "version": "1.2.0",
+  "description": "面向长 ChatGPT 对话的本地优先自动化扩展，支持可靠队列、有边界工作流、自动换对话和卡死恢复。",
+  "homepage_url": "https://github.com/Evolution404/chatgpt-yolo",
   "minimum_chrome_version": "114",
   "permissions": [
     "alarms",
@@ -22,7 +22,7 @@
     "service_worker": "background-wrapper.js"
   },
   "action": {
-    "default_title": "YOLO for ChatGPT",
+    "default_title": "YOLO - ChatGPT 自动化",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -53,6 +53,7 @@
         "platforms.js",
         "shared.js",
         "commands.js",
+        "rollover.js",
         "command-ui.js",
         "content-state.js",
         "content.js",

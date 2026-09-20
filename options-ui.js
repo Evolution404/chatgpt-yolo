@@ -5,7 +5,7 @@
     root.YOLOOptionsUI = api;
     if (typeof document !== "undefined") {
       api.mount(document, root);
-      api.loadPortability(document, root).catch((error) => console.error("YOLO portability failed to load", error));
+      api.loadPortability(document, root).catch((error) => console.error("YOLO 数据工具加载失败", error));
     }
   }
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
@@ -24,10 +24,10 @@
 
   function saveStateFor(message) {
     const text = normalizeSearch(message);
-    if (!text || text.includes("loading")) return "loading";
-    if (text.includes("saving")) return "saving";
-    if (text.includes("no conversation")) return "limited";
-    if (text.includes("could not") || text.includes("failed") || text.includes("unavailable")) return "error";
+    if (!text || text.includes("加载")) return "loading";
+    if (text.includes("保存中") || text.includes("正在保存")) return "saving";
+    if (text.includes("未选择") || text.includes("未保存")) return "limited";
+    if (text.includes("无法") || text.includes("失败") || text.includes("不可用")) return "error";
     return "saved";
   }
 
@@ -36,7 +36,7 @@
       const script = doc.createElement("script");
       script.src = win.chrome.runtime.getURL(file);
       script.addEventListener("load", resolve, { once: true });
-      script.addEventListener("error", () => reject(new Error(`Could not load ${file}`)), { once: true });
+      script.addEventListener("error", () => reject(new Error(`无法加载 ${file}`)), { once: true });
       doc.head.append(script);
     });
   }
@@ -96,7 +96,7 @@
       }
       clearSearch.hidden = !query;
       searchEmpty.hidden = visibleCount > 0;
-      sectionCount.textContent = `${visibleCount} section${visibleCount === 1 ? "" : "s"}`;
+      sectionCount.textContent = `${visibleCount} 个分区`;
       if (!visibleSections().some((section) => section.id === activeId)) setActive(visibleSections()[0]?.id);
     }
 

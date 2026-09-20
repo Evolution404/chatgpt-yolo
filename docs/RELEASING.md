@@ -43,9 +43,9 @@ The release workflow validates the tag/version match, packages the allowlisted r
 Verify a downloaded archive before loading it:
 
 ```bash
-gh attestation verify yolo-v<version>.zip --repo kartikkabadi/chatgpt-yolo
+gh attestation verify yolo-v<version>.zip --repo Evolution404/chatgpt-yolo
 ```
 
-This release plan targets `v1.1.0` as the first public launch archive. Source install remains supported but is secondary to the verified release ZIP.
+The current fork release target is `v1.2.0`, which adds durable cross-conversation rollover. Source install remains supported but is secondary to the verified release ZIP.
 
 Chrome Web Store distribution should follow a stable public beta, a current policy/terms review, complete store disclosures, and a repeatable selector-regression response process. GitHub releases remain the source-of-truth artifacts.

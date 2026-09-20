@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,56 +15,56 @@
           <div class="brand-copy">
             <div class="brand-row">
               <h1>YOLO</h1>
-              <span id="status" class="status-badge" role="status">Loading</span>
+              <span id="status" class="status-badge" role="status">加载中</span>
             </div>
-            <p id="scope" title="">Current conversation</p>
+            <p id="scope" title="">当前对话</p>
           </div>
         </div>
         <div class="header-actions">
-          <button id="advanced" class="icon-button" type="button" aria-label="Open Advanced settings" title="Advanced settings">•••</button>
-          <label class="master-switch" title="Run automation for this conversation">
-            <span class="sr-only">Run automation for this conversation</span>
-            <input id="enabled" type="checkbox" role="switch" aria-label="Run automation for this conversation">
+          <button id="advanced" class="icon-button" type="button" aria-label="打开高级设置" title="高级设置">•••</button>
+          <label class="master-switch" title="为当前对话运行自动化">
+            <span class="sr-only">为当前对话运行自动化</span>
+            <input id="enabled" type="checkbox" role="switch" aria-label="为当前对话运行自动化">
             <span class="switch-track" aria-hidden="true"></span>
           </label>
         </div>
       </header>
 
-      <section class="control-strip" aria-label="Conversation controls">
+      <section class="control-strip" aria-label="对话控制">
         <label class="profile-control">
-          <span>Mode</span>
-          <select id="profile" aria-label="Automation profile">
-            <option value="safe">Safe</option>
-            <option value="balanced">Balanced</option>
-            <option value="fast">Fast</option>
-            <option value="custom">Custom</option>
+          <span>模式</span>
+          <select id="profile" aria-label="自动化模式">
+            <option value="safe">安全</option>
+            <option value="balanced">均衡</option>
+            <option value="fast">快速</option>
+            <option value="custom">自定义</option>
           </select>
         </label>
         <span class="control-divider" aria-hidden="true"></span>
-        <span id="queueCount" class="queue-count" aria-live="polite">0 queued</span>
+        <span id="queueCount" class="queue-count" aria-live="polite">队列 0 条</span>
         <span class="control-spacer"></span>
-        <span class="shortcut-hint">⌘/Ctrl ↵ queue</span>
+        <span class="shortcut-hint">⌘/Ctrl ↵ 加入队列</span>
       </section>
 
       <section class="compose-panel" aria-labelledby="composeHeading">
         <div class="section-kicker">
           <div>
-            <h2 id="composeHeading">Next instruction</h2>
-            <p>YOLO sends it when ChatGPT is ready.</p>
+            <h2 id="composeHeading">下一条指令</h2>
+            <p>ChatGPT 就绪后由 YOLO 自动发送。</p>
           </div>
         </div>
-        <textarea id="message" rows="4" maxlength="8000" aria-label="Message to queue" placeholder="Describe what ChatGPT should do next…"></textarea>
+        <textarea id="message" rows="4" maxlength="8000" aria-label="待加入队列的消息" placeholder="描述希望 ChatGPT 接下来执行的任务…"></textarea>
         <div class="compose-toolbar">
           <div class="template-control">
-            <select id="templateSelect" aria-label="Message template">
-              <option value="">Use template…</option>
+            <select id="templateSelect" aria-label="消息模板">
+              <option value="">使用模板…</option>
             </select>
-            <button id="manageTemplates" class="text-button" type="button">Manage</button>
+            <button id="manageTemplates" class="text-button" type="button">管理</button>
           </div>
           <div class="compose-actions">
-            <button id="cancelEdit" class="secondary-button" type="button" hidden>Cancel</button>
-            <button id="addAndSend" class="secondary-button" type="button">Send now</button>
-            <button id="addQueue" class="primary-button" type="button">Add to queue</button>
+            <button id="cancelEdit" class="secondary-button" type="button" hidden>取消</button>
+            <button id="addAndSend" class="secondary-button" type="button">立即发送</button>
+            <button id="addQueue" class="primary-button" type="button">加入队列</button>
           </div>
         </div>
         <p id="composeStatus" class="inline-status" aria-live="polite"></p>
@@ -73,19 +73,19 @@
       <section class="queue-panel" aria-labelledby="queueHeading">
         <div class="queue-header">
           <div>
-            <h2 id="queueHeading">Queue</h2>
-            <p>Ordered work for this conversation</p>
+            <h2 id="queueHeading">队列</h2>
+            <p>当前对话的待执行任务</p>
           </div>
-          <div class="queue-actions" aria-label="Queue actions">
-            <button id="togglePause" class="compact-button" type="button">Pause</button>
-            <button id="sendNext" class="compact-button" type="button">Send next</button>
-            <button id="clearQueue" class="compact-button danger" type="button">Clear</button>
+          <div class="queue-actions" aria-label="队列操作">
+            <button id="togglePause" class="compact-button" type="button">暂停</button>
+            <button id="sendNext" class="compact-button" type="button">发送下一条</button>
+            <button id="clearQueue" class="compact-button danger" type="button">清空</button>
           </div>
         </div>
         <div id="emptyQueue" class="empty-state" role="status">
           <span class="empty-icon" aria-hidden="true">＋</span>
-          <strong>No queued work</strong>
-          <span>Add an instruction above. You can reorder, edit, retry, or send it manually.</span>
+          <strong>暂无队列任务</strong>
+          <span>在上方添加指令。可排序、编辑、重试或手动发送。</span>
         </div>
         <ol id="queueList" class="queue-list"></ol>
       </section>
@@ -93,19 +93,19 @@
       <details class="activity-panel">
         <summary>
           <span class="activity-summary">
-            <span class="activity-label">Activity</span>
-            <span id="lastAction" title="">No activity yet</span>
+            <span class="activity-label">活动记录</span>
+            <span id="lastAction" title="">暂无活动</span>
           </span>
           <span class="activity-summary-end">
-            <span id="blockedReason" class="warning-badge" hidden>Blocked</span>
+            <span id="blockedReason" class="warning-badge" hidden>已阻塞</span>
             <span class="disclosure" aria-hidden="true">⌄</span>
           </span>
         </summary>
         <div class="activity-body">
-          <div class="metrics" aria-label="Automation metrics">
-            <div><strong id="sessionActions">0</strong><span>Session</span></div>
-            <div><strong id="hourlyActions">0</strong><span>Last hour</span></div>
-            <div><strong id="nextSend">—</strong><span>Next send</span></div>
+          <div class="metrics" aria-label="自动化指标">
+            <div><strong id="sessionActions">0</strong><span>本次会话</span></div>
+            <div><strong id="hourlyActions">0</strong><span>最近 1 小时</span></div>
+            <div><strong id="nextSend">—</strong><span>下次发送</span></div>
           </div>
           <p id="blockedText" class="notice" hidden></p>
           <ul id="eventList" class="event-list"></ul>
@@ -113,7 +113,7 @@
       </details>
 
       <footer class="app-footer">
-        <span>Local-only automation</span>
+        <span>仅本地运行的自动化</span>
         <span id="version"></span>
       </footer>
     </main>

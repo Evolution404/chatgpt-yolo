@@ -11,10 +11,14 @@ test("workflow sends refresh the background-owned atomic transition", () => {
 });
 
 test("failed workflow prompts are removed before the workflow blocks", () => {
+  const handlerStart = source.indexOf("async function handlePendingWorkflowItem");
+  const handlerEnd = source.indexOf("async function handleWorkflow", handlerStart);
+  const handler = source.slice(handlerStart, handlerEnd);
   const failedBranch = source.slice(
-    source.indexOf('if (item?.state === "failed")'),
-    source.indexOf("if (item) {", source.indexOf('if (item?.state === "failed")'))
+    source.indexOf('if (item?.state === "failed")', handlerStart),
+    source.indexOf("if (item) {", source.indexOf('if (item?.state === "failed")', handlerStart))
   );
+  assert.match(handler, /async function handlePendingWorkflowItem/);
   assert.match(failedBranch, /await removeQueueItem\(item\.id\)/);
   assert.match(failedBranch, /await markWorkflow\("blocked"/);
 });
@@ -27,4 +31,14 @@ test("pending workflow recovery reads authoritative state before history fallbac
   assert.match(pendingHandler, /const refreshed = await refreshWorkflow\(\)/);
   assert.match(pendingHandler, /if \(refreshed\.awaitingResponse \|\| !refreshed\.pendingItemId\) return false/);
   assert.match(pendingHandler, /completedExactly/);
+});
+
+test("stuck-generation workflow recovery queues a dedicated continuation instead of replaying the old prompt", () => {
+  const start = source.indexOf("async function recoverStalledGeneration");
+  const end = source.indexOf("function schedulePoll", start);
+  const handler = source.slice(start, end);
+  assert.match(handler, /Commands\.workflowRecoveryPrompt\(workflow\)/);
+  assert.match(handler, /source: `workflow:\$\{workflow\.kind\}:watchdog`/);
+  assert.match(handler, /queuePrompt\(prompt/);
+  assert.doesNotMatch(handler, /promptFingerprint/);
 });

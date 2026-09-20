@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Welcome to YOLO</title>
+    <title>欢迎使用 YOLO</title>
     <link rel="stylesheet" href="theme.css">
     <link rel="stylesheet" href="onboarding.css">
   </head>
@@ -11,29 +11,29 @@
     <main class="welcome-shell">
       <header>
         <span class="mark" aria-hidden="true">Y</span>
-        <p class="eyebrow">LOCAL-FIRST CHATGPT AUTOMATION</p>
-        <h1>Long conversations, without babysitting them.</h1>
-        <p class="lead">Queue the next instruction, use YOLO slash actions, or run a bounded goal. YOLO keeps your settings, queue, and workflow state local, and starts conservative.</p>
+        <p class="eyebrow">本地优先的 CHATGPT 自动化</p>
+        <h1>长对话也能自动推进，无需反复守着。</h1>
+        <p class="lead">你可以排队下一条指令、使用 YOLO 斜杠命令，或启动有边界的自动任务。YOLO 会把设置、队列和工作流状态保存在本地，并默认采用保守策略。</p>
       </header>
 
-      <section class="steps" aria-label="Getting started">
-        <article><span>1</span><div><h2>Open ChatGPT</h2><p>YOLO only runs on ChatGPT conversation pages.</p></div></article>
-        <article><span>2</span><div><h2>Keep a safe mode</h2><p>Safe and Balanced use conservative limits and approval rules.</p></div></article>
-        <article><span>3</span><div><h2>Queue or type /</h2><p>Add work from the popup, or type <code>/</code> in an empty ChatGPT composer.</p></div></article>
+      <section class="steps" aria-label="开始使用">
+        <article><span>1</span><div><h2>打开 ChatGPT</h2><p>YOLO 只在 ChatGPT 对话页面运行。</p></div></article>
+        <article><span>2</span><div><h2>保持安全模式</h2><p>“安全”和“均衡”模式采用较保守的限制与授权规则。</p></div></article>
+        <article><span>3</span><div><h2>加入队列或输入 /</h2><p>可在扩展弹窗中添加任务，也可以在空白的 ChatGPT 输入框中输入 <code>/</code>。</p></div></article>
       </section>
 
       <aside>
-        <strong>YOLO's state stays in your browser.</strong>
-        <p>No project server, analytics, account, API key, or remote code. YOLO stores queues, templates, settings, and workflow state in local extension storage. Queued prompts are sent to ChatGPT through the normal composer, just as if you typed them.</p>
+        <strong>YOLO 的状态只保存在你的浏览器中。</strong>
+        <p>无需项目服务器、分析服务、额外账号、API Key 或远程代码。YOLO 将队列、模板、设置和工作流状态保存在扩展本地存储中；队列提示词通过 ChatGPT 正常输入框发送，就像你自己输入一样。</p>
       </aside>
 
       <div class="actions">
-        <button id="openChatGPT" class="primary" type="button">Open ChatGPT</button>
-        <button id="openSettings" type="button">Review settings</button>
-        <button id="finish" class="quiet" type="button">Done</button>
+        <button id="openChatGPT" class="primary" type="button">打开 ChatGPT</button>
+        <button id="openSettings" type="button">查看设置</button>
+        <button id="finish" class="quiet" type="button">完成</button>
       </div>
 
-      <footer>Independent open-source project · Not affiliated with OpenAI · MIT licensed</footer>
+      <footer>独立开源项目 · 与 OpenAI 无隶属关系 · MIT 许可证</footer>
     </main>
     <script src="onboarding.js"></script>
   </body>

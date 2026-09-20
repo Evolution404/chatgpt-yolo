@@ -161,3 +161,30 @@ test("reads the latest ChatGPT user prompt for workflow ownership", () => {
   };
   assert.equal(Platforms.latestUserText({ userSelectors: ["user"] }, documentLike), "workflow prompt");
 });
+
+test("stuck-generation recovery clicks only a visible enabled Stop control", () => {
+  const view = { getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }) };
+  const ownerDocument = { defaultView: view };
+  let clicks = 0;
+  const button = {
+    nodeType: 1,
+    ownerDocument,
+    disabled: false,
+    textContent: "",
+    getAttribute(name) {
+      if (name === "data-testid") return "stop-button";
+      if (name === "aria-label") return "Stop generating";
+      return null;
+    },
+    getBoundingClientRect: () => ({ left: 0, right: 40, top: 0, bottom: 40, width: 40, height: 40 }),
+    click() { clicks += 1; }
+  };
+  const documentLike = {
+    querySelectorAll(selector) {
+      return selector.includes("stop-button") || selector === "button" ? [button] : [];
+    }
+  };
+  assert.equal(Platforms.findStopButton(Platforms.ADAPTERS.chatgpt, documentLike), button);
+  assert.equal(Platforms.stopGeneration(Platforms.ADAPTERS.chatgpt, documentLike), true);
+  assert.equal(clicks, 1);
+});

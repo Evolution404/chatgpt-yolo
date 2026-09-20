@@ -25,7 +25,7 @@ test("YOLO_GET_STATE handler logs failures before resolving null", () => {
 
 test("flushScheduledSave surfaces saveSettings failures in the status", () => {
   const fn = sliceBetween(optionsSrc, "async function flushScheduledSave() {", "\n  function setTemplateStatus");
-  assert.match(fn, /await saveSettings\(\)\.catch\(\(error\) => \{[\s\S]*console\.error\(\`\[YOLO options\] settings save failed: \$\{Shared\.errorMessage\(error\)\}\`\);[\s\S]*els\.saveStatus\.textContent = "Save failed";[\s\S]*\}\)/);
+  assert.match(fn, /await saveSettings\(\)\.catch\(\(error\) => \{[\s\S]*console\.error\(\`\[YOLO options\] settings save failed: \$\{Shared\.errorMessage\(error\)\}\`\);[\s\S]*els\.saveStatus\.textContent = "保存失败";[\s\S]*\}\)/);
   assert.match(fn, /await saveLock\.current\.catch\(\(\) => \{\}\);/);
 });
 
@@ -137,12 +137,12 @@ test("flushScheduledSave surfaces direct saveSettings failures in UI and console
     harness.consoleErrors.some((msg) => msg.includes("settings save failed")),
     `expected console.error to include "settings save failed", got ${JSON.stringify(harness.consoleErrors)}`
   );
-  assert.equal(harness.saveStatusText(), "Save failed");
+  assert.equal(harness.saveStatusText(), "保存失败");
 });
 
 test("workflow poll record failure is logged and polling continues", () => {
   const fn = sliceBetween(runtimeSrc, "state.pollTimer = window.setTimeout(async () => {", "}, delay);");
-  assert.match(fn, /await record\(`Workflow poll failed: \$\{Shared\.errorMessage\(error\)\}`/);
+  assert.match(fn, /await record\(`工作流轮询失败：\$\{Shared\.errorMessage\(error\)\}`/);
   assert.match(fn, /\.catch\(\(recordError\) => \{[\s\S]*console\.error\(`Workflow poll status record failed: \$\{Shared\.errorMessage\(recordError\)\}`\);[\s\S]*\}\)/);
   assert.match(fn, /schedulePoll\(\);/);
 });

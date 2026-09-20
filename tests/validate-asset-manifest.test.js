@@ -5,7 +5,7 @@ const path = require("node:path");
 const os = require("node:os");
 
 function tmpDir(prefix) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 }
 
 function fakePng(width, height) {

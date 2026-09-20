@@ -19,6 +19,7 @@
   const MARKER_RESPONSE_STABLE_MS = 15_000;
   const MISSING_MARKER_RESPONSE_STABLE_MS = 3 * 60 * 60 * 1_000;
   const REFRESH_QUIET_MS = 60_000;
+  const WATCHDOG_RECOVERY_SETTLE_MS = 15_000;
 
   const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
@@ -148,6 +149,53 @@
     return Boolean(enabled && workflowStatus === "running");
   }
 
+  function generationWatchdogDecision({
+    enabled = false,
+    generating = false,
+    startedAt = 0,
+    lastProgressAt = 0,
+    stopRequestedAt = 0,
+    stoppedAt = 0,
+    now = Date.now(),
+    softStallMs = 5 * 60 * 1000,
+    hardStallMs = 10 * 60 * 1000,
+    absoluteLimitMs = 30 * 60 * 1000,
+    stopGraceMs = 30 * 1000,
+    recoverySettleMs = WATCHDOG_RECOVERY_SETTLE_MS
+  } = {}) {
+    if (!enabled) return { action: "none", reason: "生成卡死监控已关闭" };
+    const timestamp = finite(now, Date.now());
+    const started = Math.max(0, finite(startedAt, 0));
+    const progress = Math.max(started, finite(lastProgressAt, started));
+    const stopAt = Math.max(0, finite(stopRequestedAt, 0));
+    const stopped = Math.max(0, finite(stoppedAt, 0));
+
+    if (stopAt > 0) {
+      if (!generating && stopped > 0) {
+        const settleRemaining = Math.max(0, stopped + Math.max(0, finite(recoverySettleMs, WATCHDOG_RECOVERY_SETTLE_MS)) - timestamp);
+        if (settleRemaining > 0) return { action: "wait-recovery", reason: "正在等待被中断的回答稳定", retryAfterMs: settleRemaining };
+        return { action: "resume", reason: "被中断的生成已停止，可从已有部分回答继续" };
+      }
+      if (generating) {
+        const graceRemaining = Math.max(0, stopAt + Math.max(0, finite(stopGraceMs, 30_000)) - timestamp);
+        if (graceRemaining > 0) return { action: "wait-stop", reason: "正在等待停止生成操作生效", retryAfterMs: graceRemaining };
+        return { action: "refresh", reason: "请求停止后仍处于生成状态" };
+      }
+    }
+
+    if (!generating || started <= 0) return { action: "none", reason: "当前没有活动的生成任务" };
+    if (timestamp - started >= Math.max(0, finite(absoluteLimitMs, 30 * 60 * 1000))) {
+      return { action: "stop", reason: "单次生成已超过绝对时间上限", absolute: true };
+    }
+    if (timestamp - progress >= Math.max(0, finite(hardStallMs, 10 * 60 * 1000))) {
+      return { action: "stop", reason: "生成在硬卡顿时限内没有可观察进展", absolute: false };
+    }
+    if (timestamp - progress >= Math.max(0, finite(softStallMs, 5 * 60 * 1000))) {
+      return { action: "warn", reason: "生成长时间没有可观察进展" };
+    }
+    return { action: "none", reason: "生成状态仍在监控允许范围内" };
+  }
+
   return Object.freeze({
     VISIBLE_WORKFLOW_POLL_MS,
     HIDDEN_ACTIVE_WORKFLOW_POLL_MS,
@@ -158,6 +206,7 @@
     MARKER_RESPONSE_STABLE_MS,
     MISSING_MARKER_RESPONSE_STABLE_MS,
     REFRESH_QUIET_MS,
+    WATCHDOG_RECOVERY_SETTLE_MS,
     scanDelay,
     routeDelay,
     mutationDelay,
@@ -167,6 +216,7 @@
     inputSafety,
     nextGenerationHoldUntil,
     canAutomaticRefresh,
-    shouldProtectTab
+    shouldProtectTab,
+    generationWatchdogDecision
   });
 });

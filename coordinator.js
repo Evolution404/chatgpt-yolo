@@ -74,7 +74,7 @@
     const normalizedKey = cleanKey(key);
     const normalizedOwner = clean(ownerId);
     if (!normalizedKey || !normalizedOwner) {
-      return { state, ok: false, reason: "Action key and owner are required", code: "action.guard_invalid" };
+      return { state, ok: false, reason: "操作标识和执行者不能为空", code: "action.guard_invalid" };
     }
 
     let entry = state.entries.find((candidate) => candidate.key === normalizedKey);
@@ -82,7 +82,7 @@
       if (state.entries.length >= MAX_GUARDS) {
         const idleIndex = state.entries.findIndex((candidate) => candidate.phase === "idle");
         if (idleIndex < 0) {
-          return { state, ok: false, reason: "Action guard capacity is occupied by unresolved actions", code: "action.guard_capacity" };
+          return { state, ok: false, reason: "操作保护容量已被未决操作占满", code: "action.guard_capacity" };
         }
         state.entries.splice(idleIndex, 1);
       }
@@ -94,16 +94,16 @@
       return {
         state,
         ok: false,
-        reason: "The previous action may have happened and requires manual reset before retrying",
+        reason: "上一次操作可能已经执行，重试前需要手动重置",
         code: "action.outcome_unknown",
         unknownAt: entry.unknownAt
       };
     }
     if (entry.ownerId && entry.ownerId !== normalizedOwner && entry.expiresAt > at) {
-      return { state, ok: false, reason: "This action is already running in another tab", code: "action.busy", retryAt: entry.expiresAt };
+      return { state, ok: false, reason: "此操作已在另一个标签页执行中", code: "action.busy", retryAt: entry.expiresAt };
     }
     if (entry.phase === "idle" && cooldownMs > 0 && entry.lastCompletedAt + cooldownMs > at) {
-      return { state, ok: false, reason: "This action is still in cooldown", code: "action.cooldown", retryAt: entry.lastCompletedAt + cooldownMs };
+      return { state, ok: false, reason: "此操作仍处于冷却时间内", code: "action.cooldown", retryAt: entry.lastCompletedAt + cooldownMs };
     }
 
     if (entry.ownerId === normalizedOwner && entry.expiresAt > at) {
@@ -127,12 +127,12 @@
     const state = normalizeState(rawState, at);
     const entry = state.entries.find((candidate) => candidate.key === cleanKey(key));
     const normalizedToken = clean(token);
-    if (!entry) return { state, ok: false, reason: "Action lease was not found", code: "action.guard_missing" };
+    if (!entry) return { state, ok: false, reason: "未找到操作租约", code: "action.guard_missing" };
     if (entry.phase === "unknown" && entry.token === normalizedToken) {
       return { state, ok: true, alreadyExecuting: true, unknown: true };
     }
     if (!normalizedToken || entry.token !== normalizedToken || !["claimed", "executing"].includes(entry.phase)) {
-      return { state, ok: false, reason: "Action lease is no longer valid", code: "action.guard_invalid" };
+      return { state, ok: false, reason: "操作租约已失效", code: "action.guard_invalid" };
     }
     const alreadyExecuting = entry.phase === "executing";
     entry.phase = "executing";
@@ -146,12 +146,12 @@
     const normalizedKey = cleanKey(key);
     const normalizedToken = clean(token);
     const entry = state.entries.find((candidate) => candidate.key === normalizedKey);
-    if (!entry) return { state, ok: false, reason: "Action lease was not found", code: "action.guard_missing" };
+    if (!entry) return { state, ok: false, reason: "未找到操作租约", code: "action.guard_missing" };
     if (entry.lastCompletedToken && entry.lastCompletedToken === normalizedToken) {
       return { state, ok: true, alreadyCompleted: true };
     }
     if (!normalizedToken || entry.token !== normalizedToken || !["claimed", "executing", "unknown"].includes(entry.phase)) {
-      return { state, ok: false, reason: "Action lease is no longer valid", code: "action.guard_invalid" };
+      return { state, ok: false, reason: "操作租约已失效", code: "action.guard_invalid" };
     }
     entry.phase = "idle";
     entry.ownerId = "";
@@ -170,13 +170,13 @@
     const entry = state.entries.find((candidate) => candidate.key === cleanKey(key));
     if (!entry) return { state, ok: true, released: false };
     if (!token || entry.token !== clean(token)) {
-      return { state, ok: false, reason: "Action lease is no longer valid", code: "action.guard_invalid" };
+      return { state, ok: false, reason: "操作租约已失效", code: "action.guard_invalid" };
     }
     if (["executing", "unknown"].includes(entry.phase)) {
       return {
         state,
         ok: false,
-        reason: "The action may already have happened and cannot be released automatically",
+        reason: "该操作可能已经执行，无法自动释放，需要人工确认",
         code: "action.outcome_unknown"
       };
     }
@@ -194,7 +194,7 @@
     const normalizedKey = cleanKey(key);
     const targets = normalizedKey ? state.entries.filter((entry) => entry.key === normalizedKey) : state.entries;
     if (targets.some((entry) => ["claimed", "executing"].includes(entry.phase))) {
-      return { state, ok: false, reason: "An action is still running in another tab", code: "action.busy" };
+      return { state, ok: false, reason: "仍有操作正在另一个标签页执行", code: "action.busy" };
     }
     state.entries = normalizedKey ? state.entries.filter((entry) => entry.key !== normalizedKey) : [];
     state.updatedAt = at;
@@ -204,10 +204,10 @@
   function resetPrefix(rawState, prefix, at = Date.now()) {
     const state = normalizeState(rawState, at);
     const normalizedPrefix = cleanKey(prefix);
-    if (!normalizedPrefix) return { state, ok: false, reason: "Action guard prefix is required", code: "action.guard_invalid" };
+    if (!normalizedPrefix) return { state, ok: false, reason: "操作保护前缀不能为空", code: "action.guard_invalid" };
     const targets = state.entries.filter((entry) => entry.key.startsWith(normalizedPrefix));
     if (targets.some((entry) => ["claimed", "executing"].includes(entry.phase))) {
-      return { state, ok: false, reason: "An action is still running in another tab", code: "action.busy" };
+      return { state, ok: false, reason: "仍有操作正在另一个标签页执行", code: "action.busy" };
     }
     state.entries = state.entries.filter((entry) => !entry.key.startsWith(normalizedPrefix));
     state.updatedAt = at;
