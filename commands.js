@@ -283,13 +283,16 @@
     ].join("\n\n");
   }
 
-  function workflowRecoveryPrompt(rawWorkflow) {
+  function workflowRecoveryPrompt(rawWorkflow, { cause = "watchdog" } = {}) {
     const workflow = normalizeWorkflow(rawWorkflow);
     if (workflow.status === "idle" || !workflow.kind || !workflow.objective) return "";
+    const interruption = cause === "response-timeout"
+      ? "The previous assistant turn did not produce a usable final response even after the conversation was refreshed."
+      : "The previous assistant generation was stopped by a local stuck-generation watchdog because the page stopped making reliable progress.";
     return [
       `Resume the interrupted YOLO ${workflow.kind === "goal" ? "Goal" : "Loop"} workflow for: ${workflow.objective}`,
-      "The previous assistant generation was stopped by a local stuck-generation watchdog because the page stopped making reliable progress.",
-      "Continue from whatever partial work is already visible in this conversation. Do not repeat completed work and do not resend or reinterpret the previous user prompt from scratch.",
+      interruption,
+      "Continue from whatever partial work is already visible in this conversation. Do not repeat completed work and do not resend or reinterpret the previous user prompt from scratch. Do not wait for the previous turn to resume.",
       `This is task iteration ${workflow.totalIterations + 1} of at most ${workflow.maxIterations} (chat-local turn ${workflow.iteration + 1}).`,
       `At the very end, emit exactly one marker on its own line: ${markerNames(workflow)}. Missing or malformed markers pause the workflow.`
     ].join("\n\n");

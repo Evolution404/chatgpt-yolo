@@ -165,7 +165,7 @@
 
   function findErrorState(adapter, documentLike = document) {
     if (!adapter) return null;
-    const errorText = /(error|went wrong|try again|retry|failed|network error|出错|错误|失败|超时|重试|网络错误|网络异常|连接中断)/i;
+    const errorText = /(error|went wrong|try again|failed|network error|出错|错误|失败|超时|网络错误|网络异常|连接中断)/i;
     const retryText = /(retry|try again|重试|再试一次)/i;
     const explicit = adapter.errorSelectors.flatMap((selector) => Array.from(documentLike.querySelectorAll(selector)));
     const error = explicit.find((element) => visible(element) && errorText.test(normalizedText(element)));

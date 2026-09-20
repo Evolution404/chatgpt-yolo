@@ -325,7 +325,7 @@
         stoppedAt: 0,
         refreshRequestedAt: 0
       });
-      const assistantFingerprint = Commands.fingerprint(Platforms.latestAssistantText(state.platform));
+      const assistantFingerprint = Commands.fingerprint(Platforms.latestResponseActivityText(state.platform));
       if (active && !wasGenerating) {
         watchdog.startedAt = timestamp;
         watchdog.lastProgressAt = timestamp;

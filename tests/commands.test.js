@@ -241,6 +241,23 @@ test("watchdog recovery prompt continues partial work without replaying the inte
   assert.match(prompt, /\[YOLO:ROLLOVER\]/);
 });
 
+test("response-timeout recovery prompt resumes a dead assistant turn after refresh", () => {
+  const workflow = Commands.normalizeWorkflow({
+    kind: "goal",
+    objective: "finish LBA0-LBA12",
+    status: "running",
+    maxIterations: 50,
+    iteration: 0,
+    totalIterations: 0
+  }, 1000);
+  const prompt = Commands.workflowRecoveryPrompt(workflow, { cause: "response-timeout" });
+  assert.match(prompt, /did not produce a usable final response/i);
+  assert.match(prompt, /after the conversation was refreshed/i);
+  assert.match(prompt, /continue from whatever partial work is already visible/i);
+  assert.match(prompt, /do not wait for the previous turn to resume/i);
+  assert.match(prompt, /\[YOLO:CONTINUE\]/);
+});
+
 test("awaiting workflows retain and clear response stability candidates safely", () => {
   const waiting = Commands.normalizeWorkflow({
     kind: "loop",

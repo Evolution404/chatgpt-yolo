@@ -210,13 +210,13 @@
 
   function responseRecoveryAnchor({ workflow = {}, lastGenerationAt = 0 } = {}) {
     const refreshAt = Math.max(0, finite(workflow?.responseStartRefreshAt, 0));
-    if (refreshAt > 0) return refreshAt;
     const generationEndedAt = workflow?.sawGeneration ? Math.max(0, finite(lastGenerationAt, 0)) : 0;
     return Math.max(
       0,
       finite(workflow?.lastPromptAt, 0),
       generationEndedAt,
-      finite(workflow?.responseActivityAt, 0)
+      finite(workflow?.responseActivityAt, 0),
+      refreshAt
     );
   }
 
@@ -263,7 +263,7 @@
         anchor + timeoutMs,
         refreshAt ? "刷新后" : "首次等待",
         refreshAt
-          ? "到期后仍无有效回答则阻塞"
+          ? "从刷新后的最近页面进展重新计时，到期后仍无有效回答则发送恢复提示"
           : (responseActivityAt > 0 ? "从最近页面进展重新计时，到期后仍无有效回答则刷新一次" : "到期后仍无有效回答则刷新一次")
       );
     }

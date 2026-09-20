@@ -984,7 +984,6 @@
     if (responseActivityChanged) {
       workflow.responseActivityFingerprint = responseActivityFingerprint;
       workflow.responseActivityAt = now();
-      workflow.responseStartRefreshAt = 0;
     }
 
     if (apiState.generating) {
@@ -992,7 +991,6 @@
         workflow.sawGeneration = true;
         workflow.responseCandidateFingerprint = "";
         workflow.responseCandidateSince = 0;
-        workflow.responseStartRefreshAt = 0;
         workflow.reason = "ChatGPT 正在处理";
         workflow.updatedAt = now();
         await writeWorkflow(workflow);
@@ -1031,8 +1029,20 @@
             await writeWorkflow(workflow);
             return true;
           }
-          await markWorkflow("blocked", `刷新后 ${responseStartMin} 分钟仍未收到 ChatGPT 回答，请检查页面或网络状态`, "command.workflow.response_start_timeout");
-          return true;
+          const recovered = await recoverStalledGeneration(
+            `刷新后 ${responseStartMin} 分钟仍未收到有效回答`,
+            { cause: "response-timeout" }
+          );
+          if (recovered?.ok && (recovered.handled || recovered.alreadyRecovered)) return true;
+          if (recovered?.code !== "watchdog.generation_active") {
+            const latest = await readWorkflow(state.pageId);
+            if (latest.status === "running" && latest.awaitingResponse && !latest.pendingItemId) {
+              latest.reason = `刷新后仍未收到有效回答，正在等待自动恢复：${recovered?.reason || "稍后重试"}`;
+              latest.updatedAt = now();
+              await writeWorkflow(latest);
+            }
+          }
+          return false;
         }
       }
       if (responseActivityChanged) {
@@ -1115,7 +1125,7 @@
     };
   }
 
-  async function recoverStalledGeneration(reason = "生成卡死监控") {
+  async function recoverStalledGeneration(reason = "生成卡死监控", { cause = "watchdog" } = {}) {
     await syncRoute();
     let workflow = await readWorkflow(state.pageId);
     state.workflow = workflow;
@@ -1137,14 +1147,21 @@
       return { ok: false, handled: false, reason: "无法获取工作流执行租约", code: "watchdog.workflow_claim_failed" };
     }
     workflow = Commands.normalizeWorkflow(state.workflow);
-    const prompt = Commands.workflowRecoveryPrompt(workflow);
+    const prompt = Commands.workflowRecoveryPrompt(workflow, { cause });
     if (!prompt) return { ok: false, handled: false, reason: "无法生成卡死恢复提示词", code: "watchdog.prompt_empty" };
+    const recoverySource = cause === "response-timeout"
+      ? `workflow:${workflow.kind}:response-recovery`
+      : `workflow:${workflow.kind}:watchdog`;
     const queued = await queuePrompt(prompt, {
       workflow,
-      source: `workflow:${workflow.kind}:watchdog`
+      source: recoverySource
     });
     if (!queued.ok) return { ...queued, handled: false };
-    await record(`已恢复被中断的生成（${reason}）`, "warning", "command.workflow.watchdog_recovered");
+    await record(
+      cause === "response-timeout" ? `已发送回答中断恢复提示（${reason}）` : `已恢复被中断的生成（${reason}）`,
+      "warning",
+      cause === "response-timeout" ? "command.workflow.response_recovered" : "command.workflow.watchdog_recovered"
+    );
     return { ok: true, handled: true, sent: Boolean(queued.sent) };
   }
 

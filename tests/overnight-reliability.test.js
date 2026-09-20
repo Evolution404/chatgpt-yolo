@@ -39,7 +39,7 @@ test("active workflow protection is explicit and returns idle tabs to browser me
   assert.match(options, /内存节省/);
 });
 
-test("workflow response-start timeout is bounded and refreshes once before blocking", () => {
+test("workflow response-start timeout is bounded, refreshes once, then resumes with a recovery prompt", () => {
   const runtime = read("command-runtime.js");
   const content = read("content.js");
   const platforms = read("platforms.js");
@@ -51,10 +51,19 @@ test("workflow response-start timeout is bounded and refreshes once before block
   assert.match(runtime, /apiState\.lastGenerationAt/);
   assert.doesNotMatch(runtime, /generationWatchdogEnabled && !workflow\.sawGeneration/);
   assert.match(runtime, /watchdog-response-refresh/);
-  assert.match(runtime, /command\.workflow\.response_start_timeout/);
+  assert.match(runtime, /command\.workflow\.response_recovered/);
   assert.match(content, /action === "watchdog-response-refresh"/);
   assert.match(platforms, /turnSelectors/);
   assert.match(platforms, /latestResponseActivityText/);
+});
+
+test("generation watchdog progress follows visible tool and reasoning activity", () => {
+  const content = read("content.js");
+  const start = content.indexOf("function updateGenerationState");
+  const end = content.indexOf("function inputActionCooldownPassed", start);
+  const updateGenerationState = content.slice(start, end);
+  assert.match(updateGenerationState, /Platforms\.latestResponseActivityText\(state\.platform\)/);
+  assert.doesNotMatch(updateGenerationState, /Platforms\.latestAssistantText\(state\.platform\)/);
 });
 
 test("workflow response recovery is independent of the general automation master switch", () => {
@@ -77,6 +86,17 @@ test("workflow response recovery is independent of the general automation master
     timeoutBranch.indexOf('api.runAction("watchdog-response-refresh")')
       < timeoutBranch.indexOf("workflow.responseStartRefreshAt = now()")
   );
+});
+
+test("post-refresh response timeout queues a dedicated workflow recovery prompt instead of blocking", () => {
+  const runtime = read("command-runtime.js");
+  const start = runtime.indexOf("if (now() - anchor >= responseStartTimeoutMs)");
+  const end = runtime.indexOf("if (responseActivityChanged)", start);
+  const branch = runtime.slice(start, end);
+  assert.match(branch, /recoverStalledGeneration/);
+  assert.match(branch, /cause: "response-timeout"/);
+  assert.doesNotMatch(branch, /markWorkflow\("blocked"/);
+  assert.doesNotMatch(branch, /command\.workflow\.response_start_timeout/);
 });
 
 test("renderer freeze recovery uses persisted heartbeats instead of waiting only on renderer replies", () => {

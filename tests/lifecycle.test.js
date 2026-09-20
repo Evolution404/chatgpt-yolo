@@ -247,7 +247,7 @@ test("response recovery anchor follows the latest real response progress", () =>
       workflow: { ...workflow, responseStartRefreshAt: 60_000 },
       lastGenerationAt: 70_000
     }),
-    60_000
+    70_000
   );
 });
 
@@ -268,6 +268,7 @@ test("live status countdowns show stop grace and second response timeout phase",
     sawGeneration: true,
     responseCandidateFingerprint: "",
     responseStartRefreshAt: 100_000,
+    responseActivityAt: 125_000,
     lastPromptAt: 1_000,
     runnerExpiresAt: 0
   };
@@ -301,5 +302,6 @@ test("live status countdowns show stop grace and second response timeout phase",
   });
   const response = postRefresh.find((entry) => entry.id === "response-start");
   assert.equal(response.phase, "刷新后");
-  assert.equal(response.dueAt, 280_000);
+  assert.equal(response.dueAt, 305_000);
+  assert.match(response.detail, /恢复提示/);
 });

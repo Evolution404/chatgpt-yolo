@@ -241,3 +241,22 @@ test("detects localized ChatGPT send timeout errors", () => {
 
   assert.equal(Platforms.findErrorState(Platforms.ADAPTERS.chatgpt, documentLike), alert);
 });
+
+test("does not treat the faster-model retry notice as a ChatGPT error", () => {
+  const view = { getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }) };
+  const ownerDocument = { defaultView: view };
+  const notice = {
+    nodeType: 1,
+    ownerDocument,
+    textContent: "我们的系统正在进一步处理此请求。你可以改用响应更快的模型重试以更快获得回复。",
+    getBoundingClientRect: () => ({ left: 0, right: 420, top: 0, bottom: 64, width: 420, height: 64 })
+  };
+  const documentLike = {
+    querySelectorAll(selector) {
+      if (selector === "[role='alert']") return [notice];
+      return [];
+    }
+  };
+
+  assert.equal(Platforms.findErrorState(Platforms.ADAPTERS.chatgpt, documentLike), null);
+});
