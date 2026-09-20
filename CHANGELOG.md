@@ -4,6 +4,8 @@ All notable changes are documented here.
 
 ## Unreleased
 
+- Fixed unattended Goal/Loop recovery when ChatGPT briefly enters generation and then surfaces a localized send-timeout error without a usable assistant response: Chinese timeout/retry alerts are now recognized, and the 3-minute response recovery timer still applies after generation has already started once.
+
 ## 1.2.0 - 2026-09-20
 
 - Added durable `/rollover` handoff into a fresh ChatGPT conversation with strict envelope validation, exact bootstrap receipt, and successor binding.

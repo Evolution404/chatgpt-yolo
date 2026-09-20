@@ -188,3 +188,22 @@ test("stuck-generation recovery clicks only a visible enabled Stop control", () 
   assert.equal(Platforms.stopGeneration(Platforms.ADAPTERS.chatgpt, documentLike), true);
   assert.equal(clicks, 1);
 });
+
+test("detects localized ChatGPT send timeout errors", () => {
+  const view = { getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }) };
+  const ownerDocument = { defaultView: view };
+  const alert = {
+    nodeType: 1,
+    ownerDocument,
+    textContent: "消息发送超时，请重试。",
+    getBoundingClientRect: () => ({ left: 0, right: 300, top: 0, bottom: 48, width: 300, height: 48 })
+  };
+  const documentLike = {
+    querySelectorAll(selector) {
+      if (selector === "[role='alert']") return [alert];
+      return [];
+    }
+  };
+
+  assert.equal(Platforms.findErrorState(Platforms.ADAPTERS.chatgpt, documentLike), alert);
+});

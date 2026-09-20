@@ -883,7 +883,8 @@
     }
 
     if (now() - workflow.lastPromptAt < RESPONSE_SETTLE_MS) return false;
-    const assistantText = Platforms.latestAssistantText(adapter());
+    const pageError = Platforms.findErrorState(adapter());
+    const assistantText = pageError ? "" : Platforms.latestAssistantText(adapter());
     const candidateFingerprint = Commands.fingerprint(assistantText);
     const noNewAssistant = !assistantText
       || candidateFingerprint === workflow.baselineFingerprint
@@ -891,8 +892,9 @@
     if (noNewAssistant) {
       const responseStartMin = Number(apiState.settings?.generationWatchdogResponseStartMin) || 3;
       const responseStartTimeoutMs = responseStartMin * 60 * 1000;
-      if (apiState.settings?.generationWatchdogEnabled && !workflow.sawGeneration && workflow.lastPromptAt > 0) {
-        const anchor = workflow.responseStartRefreshAt || workflow.lastPromptAt;
+      if (apiState.settings?.generationWatchdogEnabled && workflow.lastPromptAt > 0) {
+        const generationEndedAt = workflow.sawGeneration ? Number(apiState.lastGenerationAt) || 0 : 0;
+        const anchor = workflow.responseStartRefreshAt || Math.max(workflow.lastPromptAt, generationEndedAt);
         if (now() - anchor >= responseStartTimeoutMs) {
           if (!workflow.responseStartRefreshAt) {
             workflow.responseStartRefreshAt = now();

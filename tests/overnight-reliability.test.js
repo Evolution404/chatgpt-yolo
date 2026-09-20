@@ -44,6 +44,8 @@ test("workflow response-start timeout is bounded and refreshes once before block
   const content = read("content.js");
   assert.match(runtime, /generationWatchdogResponseStartMin/);
   assert.match(runtime, /responseStartRefreshAt/);
+  assert.match(runtime, /apiState\.lastGenerationAt/);
+  assert.doesNotMatch(runtime, /generationWatchdogEnabled && !workflow\.sawGeneration/);
   assert.match(runtime, /watchdog-response-refresh/);
   assert.match(runtime, /command\.workflow\.response_start_timeout/);
   assert.match(content, /action === "watchdog-response-refresh"/);

@@ -162,14 +162,16 @@
 
   function findErrorState(adapter, documentLike = document) {
     if (!adapter) return null;
+    const errorText = /(error|went wrong|try again|retry|failed|network error|出错|错误|失败|超时|重试|网络错误|网络异常|连接中断)/i;
+    const retryText = /(retry|try again|重试|再试一次)/i;
     const explicit = adapter.errorSelectors.flatMap((selector) => Array.from(documentLike.querySelectorAll(selector)));
-    const error = explicit.find((element) => visible(element) && /\b(error|went wrong|try again|retry|failed|network error)\b/i.test(normalizedText(element)));
+    const error = explicit.find((element) => visible(element) && errorText.test(normalizedText(element)));
     if (error) return error;
 
     return Array.from(documentLike.querySelectorAll("button")).find((button) => {
       if (!visible(button)) return false;
       const context = normalizedText(button.closest?.("[role='alert']") || button.parentElement || button);
-      return /\bretry\b/i.test(buttonText(button)) && /\b(error|went wrong|try again|retry|failed)\b/i.test(context);
+      return retryText.test(buttonText(button)) && errorText.test(context);
     }) || null;
   }
 
