@@ -257,8 +257,9 @@
     return true;
   }
 
-  function automationReady() {
-    if (!state.loaded || state.destroyed || !state.platform || !state.settings.enabled || !routeIsCurrent()) return false;
+  function automationReady({ allowDisabled = false } = {}) {
+    if (!state.loaded || state.destroyed || !state.platform || !routeIsCurrent()) return false;
+    if (!allowDisabled && !state.settings.enabled) return false;
     if (!Config.isDurablePageId(state.pageId) || !probeHydration()) return false;
     return now() - Math.max(state.pageLoadedAt, state.hydratedAt) >= state.settings.loadGraceSec * 1000;
   }
@@ -577,10 +578,10 @@
     return now() - (state.runtime.lastRefreshAt || 0) >= cooldownMs;
   }
 
-  async function refreshPage(reason, automatic = true, action = "refresh") {
+  async function refreshPage(reason, automatic = true, action = "refresh", { allowDisabled = false } = {}) {
     if (state.actionInFlight || !state.platform || state.reloadScheduled) return false;
     const actionPageId = state.pageId;
-    if (automatic && !automationReady()) return false;
+    if (automatic && !automationReady({ allowDisabled })) return false;
     if (!automatic && (!state.loaded || !routeIsCurrent() || !Config.isDurablePageId(state.pageId))) return false;
     const workflow = workflowHealth();
     const generating = updateGenerationState();
@@ -737,7 +738,12 @@
       if (state.actionInFlight || state.reloadScheduled) return false;
       watchdog.refreshRequestedAt = now();
       ContentState.saveRuntime();
-      const refreshed = await refreshPage("stuck generation watchdog fallback", true, "watchdog");
+      const refreshed = await refreshPage(
+        "stuck generation watchdog fallback",
+        true,
+        "watchdog",
+        { allowDisabled: workflowHealth().active }
+      );
       if (!refreshed) {
         await setLastAction("生成卡死监控正在等待安全的刷新时机", "warning", "watchdog.refresh_waiting");
       }
@@ -1213,7 +1219,14 @@
     if (action === "nudge") return sendDeepNudge("manual", false);
     if (action === "continue") return sendContinue("manual", false);
     if (action === "refresh") return refreshPage("manual", false);
-    if (action === "watchdog-response-refresh") return refreshPage("工作流等待 ChatGPT 回答启动超时", true, "watchdog");
+    if (action === "watchdog-response-refresh") {
+      return refreshPage(
+        "工作流等待 ChatGPT 回答启动超时",
+        true,
+        "watchdog",
+        { allowDisabled: true }
+      );
+    }
     if (action === "queue-next") return handleQueue(false);
     if (action === "scan") {
       await runCycle();

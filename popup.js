@@ -319,7 +319,7 @@
     const runtime = contentState?.runtime || {};
     els.enabled.checked = Boolean(settings.enabled);
     els.profile.value = settings.profile || "custom";
-    els.status.textContent = settings.enabled ? "运行中" : "已暂停";
+    els.status.textContent = settings.enabled ? "常规运行" : "常规暂停";
     els.status.dataset.on = String(Boolean(settings.enabled));
     els.scope.textContent = `${contentState?.platform || "聊天"} · 当前对话`;
     els.scope.title = els.scope.textContent;

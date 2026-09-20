@@ -104,7 +104,7 @@ test("template rendering receives the current conversation", () => {
 });
 
 test("primary controls and dynamic option statuses are accessibly named", () => {
-  assert.match(read("popup.html"), /id="enabled"[^>]*aria-label="为当前对话运行自动化"/);
+  assert.match(read("popup.html"), /id="enabled"[^>]*aria-label="为当前对话运行常规自动化"/);
   const options = read("options.html");
   assert.match(options, /id="saveStatus"[^>]*role="status"/);
   assert.match(options, /id="templateStatus"[^>]*role="status"/);
@@ -188,6 +188,16 @@ test("workflow chrome exposes a live status window with countdown timers", () =>
   assert.match(runtime, /buildLiveStatus/);
   assert.match(runtime, /formatCountdown/);
   assert.match(runtime, /filter\(\(timer\) => timer\.remainingMs > 0\)/);
+});
+
+test("live status updates do not rebuild the status window every poll", () => {
+  const ui = read("command-ui.js");
+  const start = ui.indexOf("function updateStatus");
+  const end = ui.indexOf("function showStatus", start);
+  const updateStatus = ui.slice(start, end);
+  assert.doesNotMatch(updateStatus, /replaceChildren/);
+  assert.match(updateStatus, /statusRowNodes/);
+  assert.match(updateStatus, /statusTimerNodes/);
 });
 
 test("runtime uses the pure workflow response decision and completion ring", () => {

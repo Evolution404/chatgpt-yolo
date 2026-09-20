@@ -145,6 +145,7 @@
       .status-summary strong { color: var(--cmd-text-primary); font: 700 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       .status-summary span { color: var(--cmd-text-secondary); font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; }
       .status-section-title { margin-top: 4px; color: var(--cmd-text-tertiary); font: 700 10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-transform: uppercase; letter-spacing: .06em; }
+      .status-rows, .status-timers { display: grid; gap: 8px; }
       .status-timer { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: center; padding: 8px 10px; border: 1px solid var(--cmd-border-subtle); border-radius: 9px; background: var(--cmd-bg-action); }
       .status-timer-main { min-width: 0; display: grid; gap: 2px; }
       .status-timer-label { color: var(--cmd-text-value); font: 600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -218,6 +219,16 @@
     statusClose.setAttribute("aria-label", "关闭状态窗口");
     statusHead.appendChild(statusClose);
     const statusBody = element("div", "status-body");
+    const statusSummary = element("div", "status-summary");
+    const statusHeadline = element("strong");
+    const statusNextAction = element("span");
+    statusSummary.append(statusHeadline, statusNextAction);
+    statusSummary.hidden = true;
+    const statusRows = element("div", "status-rows");
+    const statusTimersTitle = element("div", "status-section-title", "定时器倒计时");
+    statusTimersTitle.hidden = true;
+    const statusTimers = element("div", "status-timers");
+    statusBody.append(statusSummary, statusRows, statusTimersTitle, statusTimers);
     status.append(statusHead, statusBody);
     shadow.appendChild(status);
 
@@ -227,6 +238,8 @@
     let argumentCommand = null;
     let currentWorkflow = Commands.freshWorkflow();
     let currentStatus = {};
+    const statusRowNodes = new Map();
+    const statusTimerNodes = new Map();
     let workflowActionInFlight = false;
     let destroyed = false;
 
@@ -377,34 +390,64 @@
 
     function updateStatus(data = {}) {
       currentStatus = data && typeof data === "object" ? data : {};
-      statusBody.replaceChildren();
-      if (currentStatus.headline || currentStatus.nextAction) {
-        const summary = element("div", "status-summary");
-        summary.append(
-          element("strong", "", currentStatus.headline || "YOLO 状态"),
-          element("span", "", currentStatus.nextAction || "当前无倒计时动作")
-        );
-        statusBody.appendChild(summary);
+      const showSummary = Boolean(currentStatus.headline || currentStatus.nextAction);
+      statusSummary.hidden = !showSummary;
+      if (showSummary) {
+        statusHeadline.textContent = currentStatus.headline || "YOLO 状态";
+        statusNextAction.textContent = currentStatus.nextAction || "当前无倒计时动作";
       }
+
+      const seenRows = new Set();
       for (const [key, value] of currentStatus.rows || []) {
-        const row = element("div", "status-row");
-        row.append(element("div", "status-key", key), element("div", "status-value", String(value ?? "")));
-        statusBody.appendChild(row);
+        const rowKey = String(key);
+        seenRows.add(rowKey);
+        let entry = statusRowNodes.get(rowKey);
+        if (!entry) {
+          const row = element("div", "status-row");
+          const keyNode = element("div", "status-key");
+          const valueNode = element("div", "status-value");
+          row.append(keyNode, valueNode);
+          entry = { row, keyNode, valueNode };
+          statusRowNodes.set(rowKey, entry);
+        }
+        entry.keyNode.textContent = rowKey;
+        entry.valueNode.textContent = String(value ?? "");
+        statusRows.appendChild(entry.row);
       }
+      for (const [key, entry] of statusRowNodes) {
+        if (seenRows.has(key)) continue;
+        entry.row.remove();
+        statusRowNodes.delete(key);
+      }
+
       const timers = Array.isArray(currentStatus.timers) ? currentStatus.timers : [];
-      if (timers.length) {
-        statusBody.appendChild(element("div", "status-section-title", "定时器倒计时"));
-        for (const timer of timers) {
+      statusTimersTitle.hidden = timers.length === 0;
+      const seenTimers = new Set();
+      for (const timer of timers) {
+          const timerKey = String(timer.id || timer.label || "timer");
+          seenTimers.add(timerKey);
+          let entry = statusTimerNodes.get(timerKey);
+          if (!entry) {
           const row = element("div", "status-timer");
           const main = element("div", "status-timer-main");
-          main.append(
-            element("div", "status-timer-label", timer.label + (timer.phase ? " · " + timer.phase : "")),
-            element("div", "status-timer-detail", timer.detail || "")
-          );
-          row.append(main, element("div", "status-timer-value", timer.countdown || "—"));
-          statusBody.appendChild(row);
-        }
+            const labelNode = element("div", "status-timer-label");
+            const detailNode = element("div", "status-timer-detail");
+            const valueNode = element("div", "status-timer-value");
+            main.append(labelNode, detailNode);
+            row.append(main, valueNode);
+            entry = { row, labelNode, detailNode, valueNode };
+            statusTimerNodes.set(timerKey, entry);
+          }
+          entry.labelNode.textContent = timer.label + (timer.phase ? " · " + timer.phase : "");
+          entry.detailNode.textContent = timer.detail || "";
+          entry.valueNode.textContent = timer.countdown || "—";
+          statusTimers.appendChild(entry.row);
       }
+      for (const [key, entry] of statusTimerNodes) {
+        if (seenTimers.has(key)) continue;
+        entry.row.remove();
+        statusTimerNodes.delete(key);
+        }
     }
 
     function showStatus(data = {}) {

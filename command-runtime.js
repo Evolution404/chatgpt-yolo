@@ -472,12 +472,17 @@
       fast: "快速",
       custom: "自定义"
     }[apiState.settings?.profile] || apiState.settings?.profile || "未知";
+    const automationEnabled = Boolean(apiState.settings?.enabled);
+    const workflowRunning = workflow.status === "running";
 
     return {
-      headline: apiState.settings?.enabled ? "插件运行中" : "插件已暂停",
+      headline: workflowRunning
+        ? (automationEnabled ? "工作流运行中" : "工作流运行中 · 常规自动化已暂停")
+        : (automationEnabled ? "常规自动化运行中" : "常规自动化已暂停"),
       nextAction: nextTimer ? nextTimer.label + " " + formatCountdown(nextTimer.remainingMs) : "当前无倒计时动作",
       rows: [
-        ["插件", apiState.settings?.enabled ? "运行中" : "已暂停"],
+        ["YOLO", "已加载"],
+        ["常规自动化", automationEnabled ? "运行中" : "已暂停"],
         ["页面", apiState.hydrated ? "已就绪" : "正在加载"],
         ["工作流", workflow.status === "idle" ? "无" : "/" + workflow.kind + " · " + workflowStatus],
         ["当前阶段", workflowPhaseLabel(workflow, apiState, pageError)],
@@ -984,20 +989,19 @@
         const anchor = workflow.responseStartRefreshAt || Math.max(workflow.lastPromptAt, generationEndedAt);
         if (now() - anchor >= responseStartTimeoutMs) {
           if (!workflow.responseStartRefreshAt) {
+            const refreshed = await api.runAction("watchdog-response-refresh");
+            if (!refreshed) {
+              if (workflow.reason !== "回答恢复已到期，等待安全刷新条件") {
+                workflow.reason = "回答恢复已到期，等待安全刷新条件";
+                workflow.updatedAt = now();
+                await writeWorkflow(workflow);
+              }
+              return false;
+            }
             workflow.responseStartRefreshAt = now();
             workflow.reason = "等待回答启动超时，正在刷新当前对话";
             workflow.updatedAt = now();
-            if (!await writeWorkflow(workflow)) return false;
-            const refreshed = await api.runAction("watchdog-response-refresh");
-            if (!refreshed) {
-              const latest = await readWorkflow(state.pageId);
-              if (latest.status === "running") {
-                latest.responseStartRefreshAt = 0;
-                latest.reason = "回答启动超时，等待下一次安全恢复机会";
-                latest.updatedAt = now();
-                await writeWorkflow(latest);
-              }
-            }
+            await writeWorkflow(workflow);
             return true;
           }
           await markWorkflow("blocked", `刷新后 ${responseStartMin} 分钟仍未收到 ChatGPT 回答，请检查页面或网络状态`, "command.workflow.response_start_timeout");

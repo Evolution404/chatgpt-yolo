@@ -51,6 +51,28 @@ test("workflow response-start timeout is bounded and refreshes once before block
   assert.match(content, /action === "watchdog-response-refresh"/);
 });
 
+test("workflow response recovery is independent of the general automation master switch", () => {
+  const content = read("content.js");
+  const runtime = read("command-runtime.js");
+  assert.match(content, /function automationReady\(\{ allowDisabled = false \} = \{\}\)/);
+  assert.match(content, /!allowDisabled && !state\.settings\.enabled/);
+  const manualAction = content.slice(
+    content.indexOf("async function runManualAction"),
+    content.indexOf("async function resetRuntime")
+  );
+  assert.match(manualAction, /action === "watchdog-response-refresh"/);
+  assert.match(manualAction, /allowDisabled: true/);
+  const timeoutBranch = runtime.slice(
+    runtime.indexOf("if (now() - anchor >= responseStartTimeoutMs)"),
+    runtime.indexOf("return false;", runtime.indexOf("if (now() - anchor >= responseStartTimeoutMs)")) + 100
+  );
+  assert.match(timeoutBranch, /const refreshed = await api\.runAction\("watchdog-response-refresh"\)/);
+  assert.ok(
+    timeoutBranch.indexOf('api.runAction("watchdog-response-refresh")')
+      < timeoutBranch.indexOf("workflow.responseStartRefreshAt = now()")
+  );
+});
+
 test("renderer freeze recovery uses persisted heartbeats instead of waiting only on renderer replies", () => {
   const content = read("content.js");
   const background = read("background.js");

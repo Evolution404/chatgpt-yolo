@@ -13,7 +13,7 @@ This branch redesigns YOLO's popup and Advanced settings surfaces without changi
 
 ## Popup information architecture
 
-- Product header with current conversation and automation master switch.
+- Product header with current conversation and the ordinary-automation switch. Active Goal/Loop workflows use their own Pause/Resume/Stop controls and continue their workflow-critical safety recovery independently.
 - Compact operating-state row with profile and queue count.
 - One focused message composer with template selection and a single dominant queue action.
 - Queue workspace with readable items, state badges, contextual item actions, pause/resume, send-next, and clear.

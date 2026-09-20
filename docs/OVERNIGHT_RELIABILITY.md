@@ -19,6 +19,8 @@ When **Protect active workflows** is enabled, tabs with a running Goal or Loop a
 
 For live diagnosis, the active Goal/Loop bar includes a **状态** button. The status window refreshes with the workflow runtime and exposes the current phase and remaining time for applicable recovery and safety timers, including response-start recovery, response stabilization, generation soft/hard/absolute watchdog deadlines, Stop grace refresh, the next content heartbeat and stale-heartbeat recovery threshold, queue scheduling, periodic refresh, and the workflow runner lease. The bar itself shows the next timed action so a user can tell whether YOLO is actively waiting, recovering, or stalled without opening DevTools.
 
+The popup/Advanced **常规自动化** switch controls ordinary background automation such as approvals, ordinary error recovery, automatic queue sending, nudges, and scheduled refresh. An explicitly running Goal/Loop is controlled by its own Pause/Resume/Stop state. Its workflow-critical response-start and stuck-generation recovery therefore remains armed even when ordinary automation is paused; otherwise a persisted Goal/Loop could become unrecoverably stranded after ChatGPT times out.
+
 Protecting many huge conversations can consume substantial memory. Disable the setting when browser stability is more important than uninterrupted parallel work. Even a protected tab may still be terminated by the browser or operating system under extreme pressure; YOLO’s durable queues and workflows resume from persisted state when the page returns.
 
 ## Frozen and discarded tabs

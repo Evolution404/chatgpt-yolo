@@ -4,6 +4,7 @@ All notable changes are documented here.
 
 ## Unreleased
 
+- Fixed a response-recovery live-lock where an active Goal/Loop could reach an expired recovery timer while the general automation switch was off, repeatedly flip recovery state, and never refresh. Workflow-critical watchdog refresh now remains available for an explicitly running Goal/Loop, the refresh marker is committed only after a reload is actually scheduled, and the live status window updates existing DOM nodes instead of rebuilding itself every poll.
 - Fixed unattended Goal/Loop recovery when ChatGPT briefly enters generation and then surfaces a localized send-timeout error without a usable assistant response: Chinese timeout/retry alerts are now recognized, and the 3-minute response recovery timer still applies after generation has already started once.
 - Added an in-page live YOLO status window for active Goal/Loop workflows. It shows the current execution phase plus live countdowns for response recovery, response stabilization, 5-minute/10-minute/30-minute generation watchdog thresholds, Stop grace refresh, content heartbeat/stale-heartbeat recovery, queue scheduling, periodic refresh, and runner lease renewal; the workflow bar also shows the next timed action at a glance.
 
