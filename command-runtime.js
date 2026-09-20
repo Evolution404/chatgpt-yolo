@@ -414,6 +414,8 @@
       runtime: apiState.runtime || {},
       generating: Boolean(apiState.generating),
       lastGenerationAt: apiState.lastGenerationAt || 0,
+      lastHeartbeatAt: apiState.lastHeartbeatAt || 0,
+      hidden: document.hidden,
       now: timestamp
     });
 
@@ -444,10 +446,11 @@
       "watchdog-absolute",
       "watchdog-stop-grace"
     ]);
-    const nextTimer = [...timers]
+    const futureTimers = timers.filter((timer) => timer.remainingMs > 0);
+    const nextTimer = [...futureTimers]
       .filter((timer) => criticalIds.has(timer.id))
       .sort((a, b) => a.dueAt - b.dueAt)[0]
-      || [...timers].sort((a, b) => a.dueAt - b.dueAt)[0]
+      || [...futureTimers].sort((a, b) => a.dueAt - b.dueAt)[0]
       || null;
     const watchdogStatus = !apiState.settings?.generationWatchdogEnabled && !watchdog.stopRequestedAt
       ? "关闭"

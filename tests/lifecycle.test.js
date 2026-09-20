@@ -11,6 +11,13 @@ test("hidden tabs back off scans and workflow polling", () => {
   assert.equal(Lifecycle.workflowPollDelay({ hidden: true, workflowActive: false }), 15000);
 });
 
+test("heartbeat cadence and stale thresholds match foreground/background supervision", () => {
+  assert.equal(Lifecycle.heartbeatIntervalMs({ hidden: false }), 20_000);
+  assert.equal(Lifecycle.heartbeatIntervalMs({ hidden: true }), 45_000);
+  assert.equal(Lifecycle.heartbeatStaleMs({ hidden: false }), 60_000);
+  assert.equal(Lifecycle.heartbeatStaleMs({ hidden: true }), 150_000);
+});
+
 test("hydration waits for a real composer and a quiet DOM", () => {
   assert.equal(Lifecycle.hydrationCandidate({ documentReadyState: "loading", composerPresent: true, lastDomActivityAt: 0, now: 5000 }), false);
   assert.equal(Lifecycle.hydrationCandidate({ documentReadyState: "complete", composerPresent: false, lastDomActivityAt: 0, now: 5000 }), false);
@@ -195,6 +202,8 @@ test("live status countdowns expose response recovery and watchdog deadlines", (
     runtime,
     generating: false,
     lastGenerationAt: 40_000,
+    lastHeartbeatAt: 45_000,
+    hidden: false,
     now: 50_000
   });
   const response = idle.find((entry) => entry.id === "response-start");
@@ -204,6 +213,8 @@ test("live status countdowns expose response recovery and watchdog deadlines", (
   assert.equal(idle.find((entry) => entry.id === "queue").remainingMs, 20_000);
   assert.equal(idle.find((entry) => entry.id === "refresh").remainingMs, 30_000);
   assert.equal(idle.find((entry) => entry.id === "runner-lease").remainingMs, 40_000);
+  assert.equal(idle.find((entry) => entry.id === "heartbeat").remainingMs, 15_000);
+  assert.equal(idle.find((entry) => entry.id === "heartbeat-stale").remainingMs, 55_000);
 
   const generating = Lifecycle.liveCountdowns({
     settings,

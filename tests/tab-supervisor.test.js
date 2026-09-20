@@ -145,7 +145,8 @@ function makeHarness({ fail = "query", protectedWorkflow = false, frozen = false
       workflowKey(pageId) { return `workflow:${pageId}`; }
     },
     YOLOLifecycle: {
-      shouldProtectTab({ enabled, workflowStatus }) { return Boolean(enabled && workflowStatus === "running"); }
+      shouldProtectTab({ enabled, workflowStatus }) { return Boolean(enabled && workflowStatus === "running"); },
+      heartbeatStaleMs({ hidden }) { return hidden ? 150_000 : 60_000; }
     }
   };
 

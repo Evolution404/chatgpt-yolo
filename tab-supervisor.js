@@ -11,8 +11,6 @@
   const HEALTH_TIMEOUT_MS = 4_000;
   const INJECTION_TIMEOUT_MS = 5_000;
   const RECOVERY_RELOAD_COOLDOWN_MS = 10 * 60 * 1_000;
-  const ACTIVE_HEARTBEAT_STALE_MS = 60 * 1_000;
-  const BACKGROUND_HEARTBEAT_STALE_MS = 150 * 1_000;
   const MAX_INJECTIONS_PER_SWEEP = 2;
   const SCRIPT_FILES = Object.freeze([
     "config.js",
@@ -158,7 +156,7 @@
 
   function heartbeatIsStale(tab, heartbeat, timestamp = Date.now()) {
     if (!heartbeat?.at) return false;
-    const staleAfter = tab.active ? ACTIVE_HEARTBEAT_STALE_MS : BACKGROUND_HEARTBEAT_STALE_MS;
+    const staleAfter = Lifecycle.heartbeatStaleMs({ hidden: !tab.active });
     return timestamp - heartbeat.at >= staleAfter;
   }
 

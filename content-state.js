@@ -53,6 +53,7 @@
     hydratedAt: 0,
     hydrationCandidateSince: 0,
     lastDomActivityAt: now(),
+    lastHeartbeatAt: 0,
     generationHoldUntil: 0,
     lastGenerationPersistAt: 0,
     observer: null,
@@ -215,6 +216,7 @@
       generating: state.generationActive,
       hydrated: state.hydrated,
       lastDomActivityAt: state.lastDomActivityAt,
+      lastHeartbeatAt: state.lastHeartbeatAt || 0,
       lastGenerationAt: state.runtime?.lastGenerationAt || 0
     };
   }

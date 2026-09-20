@@ -20,6 +20,10 @@
   const MISSING_MARKER_RESPONSE_STABLE_MS = 3 * 60 * 60 * 1_000;
   const REFRESH_QUIET_MS = 60_000;
   const WATCHDOG_RECOVERY_SETTLE_MS = 15_000;
+  const HEARTBEAT_VISIBLE_MS = 20_000;
+  const HEARTBEAT_HIDDEN_MS = 45_000;
+  const HEARTBEAT_ACTIVE_STALE_MS = 60_000;
+  const HEARTBEAT_BACKGROUND_STALE_MS = 150_000;
 
   const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
@@ -41,6 +45,14 @@
   function workflowPollDelay({ hidden = false, workflowActive = false, generating = false } = {}) {
     if (!hidden) return VISIBLE_WORKFLOW_POLL_MS;
     return workflowActive || generating ? HIDDEN_ACTIVE_WORKFLOW_POLL_MS : HIDDEN_IDLE_WORKFLOW_POLL_MS;
+  }
+
+  function heartbeatIntervalMs({ hidden = false } = {}) {
+    return hidden ? HEARTBEAT_HIDDEN_MS : HEARTBEAT_VISIBLE_MS;
+  }
+
+  function heartbeatStaleMs({ hidden = false } = {}) {
+    return hidden ? HEARTBEAT_BACKGROUND_STALE_MS : HEARTBEAT_ACTIVE_STALE_MS;
   }
 
   function responseStableMs(outcome) {
@@ -202,6 +214,8 @@
     runtime = {},
     generating = false,
     lastGenerationAt = 0,
+    lastHeartbeatAt = 0,
+    hidden = false,
     now = Date.now()
   } = {}) {
     const timestamp = finite(now, Date.now());
@@ -288,6 +302,11 @@
     if (workflow?.status === "running") {
       add("runner-lease", "执行租约", workflow?.runnerExpiresAt, "自动续租", "当前标签页的工作流执行权");
     }
+    const heartbeatAt = Math.max(0, finite(lastHeartbeatAt, 0));
+    if (heartbeatAt > 0) {
+      add("heartbeat", "下次心跳", heartbeatAt + heartbeatIntervalMs({ hidden }), "标签页存活", "正常运行时会定期刷新");
+      add("heartbeat-stale", "心跳失联恢复", heartbeatAt + heartbeatStaleMs({ hidden }), "强恢复阈值", "超过阈值后后台监督器会尝试恢复标签页");
+    }
     return timers;
   }
 
@@ -306,6 +325,8 @@
     routeDelay,
     mutationDelay,
     workflowPollDelay,
+    heartbeatIntervalMs,
+    heartbeatStaleMs,
     responseStableMs,
     hydrationCandidate,
     inputSafety,

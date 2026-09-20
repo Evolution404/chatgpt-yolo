@@ -31,8 +31,6 @@
   });
 
   const FAILED_RECOVERY_RETRY_MS = 15 * 1000;
-  const HEARTBEAT_VISIBLE_MS = 20 * 1000;
-  const HEARTBEAT_HIDDEN_MS = 45 * 1000;
 
   const state = ContentState.state;
   const randomMs = ContentState.randomMs;
@@ -1086,13 +1084,14 @@
       visible: !document.hidden,
       workflowActive: workflow.active
     });
+    if (response?.ok) state.lastHeartbeatAt = Number(response.at) || now();
     return Boolean(response?.ok);
   }
 
   function restartHeartbeatTimer({ immediate = false } = {}) {
     window.clearTimeout(state.heartbeatTimer);
     if (state.destroyed || state.reloadScheduled) return;
-    const delay = immediate ? 0 : (document.hidden ? HEARTBEAT_HIDDEN_MS : HEARTBEAT_VISIBLE_MS);
+    const delay = immediate ? 0 : Lifecycle.heartbeatIntervalMs({ hidden: document.hidden });
     state.heartbeatTimer = window.setTimeout(async () => {
       try {
         await sendHeartbeat();

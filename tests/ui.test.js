@@ -187,6 +187,7 @@ test("workflow chrome exposes a live status window with countdown timers", () =>
   assert.match(runtime, /Lifecycle\.liveCountdowns/);
   assert.match(runtime, /buildLiveStatus/);
   assert.match(runtime, /formatCountdown/);
+  assert.match(runtime, /filter\(\(timer\) => timer\.remainingMs > 0\)/);
 });
 
 test("runtime uses the pure workflow response decision and completion ring", () => {
